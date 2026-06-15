@@ -1,68 +1,98 @@
-# Tonghuashun Stock Export Filter
+﻿# 同花顺导出股票筛选脚本
 
-This project reads a CSV/Excel stock list exported from Tonghuashun, filters rows with JSON rules, and writes the result to an Excel workbook.
+这个项目用于读取同花顺导出的 CSV/Excel 股票列表，按“近 X 个交易日涨幅超过 Y%”和“近 A 个交易日涨幅不超过 B%”筛选股票，并输出公司摘要结果表。成交量、换手率、量比等其他技术指标仍可通过 JSON 配置追加；不填配置即不关注这些指标。
 
-## Run
+## 运行方式
 
-If this machine does not have Python on `PATH`, use the bundled Codex Python:
-
-```powershell
-& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' stock_filter.py --input data/input.template.xlsx --config config/rules.example.json --output output/selected.xlsx
-```
-
-Only write selected rows:
+如果本机没有把 Python 加到 `PATH`，可以直接使用 Codex 内置 Python：
 
 ```powershell
-& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' stock_filter.py --input data/input.template.xlsx --config config/rules.example.json --output output/selected.xlsx --selected-only
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' stock_filter.py --input data/input.template.xlsx --rise-days 20 --rise-threshold 30 --flat-days 5 --flat-threshold 10 --output output/selected.xlsx
 ```
 
-## Input
+如果还想叠加成交量、换手率、量比等技术指标，再加上 `--config`：
 
-Supported formats: `.xlsx`, `.xls`, `.csv`.
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' stock_filter.py --input data/input.template.xlsx --rise-days 20 --rise-threshold 30 --flat-days 5 --flat-threshold 10 --config config/rules.example.json --output output/selected.xlsx
+```
 
-CSV files are read with these encodings in order: `utf-8-sig`, `gbk`, `gb18030`.
+## 输入文件
 
-The first row must contain field names. The included template uses these columns:
+支持 `.xlsx`、`.xls`、`.csv`。
 
-- Stock code
-- Stock name
-- Percent change
-- Turnover rate
-- Volume ratio
-- PE ratio
-- Market cap
-- Industry
-- Concept
+CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 
-The actual workbook columns are in Chinese to match common Tonghuashun exports. Percent values such as `3.5%` and comma-formatted values such as `1,234.56` are supported.
+第一行必须是字段名。模板文件包含这些常见字段：
 
-## Rules
+- `代码`
+- `名称`
+- `涨跌幅`
+- `换手率`
+- `量比`
+- `市盈率`
+- `总市值`
+- `行业`
+- `概念`
+- `近20日涨幅`
+- `近5日涨幅`
+- `主营业务`
+- `近1季度营收`
+- `近1季度净利润`
+- `近1季度净利润增速`
+- `近2季度营收`
+- `近2季度净利润`
+- `近2季度净利润增速`
+- `近3季度营收`
+- `近3季度净利润`
+- `近3季度净利润增速`
+- `近4季度营收`
+- `近4季度净利润`
+- `近4季度净利润增速`
 
-Rules live in JSON. The root object must contain `rules`.
+同花顺导出的百分号字段可以保留 `%`，例如 `3.5%`；带逗号的数字也可以读取，例如 `1,234.56`。
 
-Groups:
+涨幅字段支持常见列名，例如：
 
-- `all`: every child condition must match
-- `any`: at least one child condition must match
+- `近20日涨幅`
+- `近20个交易日涨幅`
+- `20日涨跌幅`
 
-Operators:
+如果没有直接涨幅列，也可以提供 `最新价` 和 `20日前收盘价`，脚本会自动计算。
 
-- Numeric: `>`, `>=`, `<`, `<=`, `==`, `!=`, `between`
-- Text: `contains`, `not_contains`, `in`, `not_in`
-- Empty checks: `is_empty`, `not_empty`
+## 规则配置
 
-If the config references a column that does not exist in the input file, the script stops and prints the missing fields.
+规则文件使用 JSON，根节点可以包含 `rules`。如果运行时不传 `--config`，脚本只使用两个涨幅条件，不再关注成交量等其他技术指标。
 
-## Output
+分组规则：
 
-The output Excel workbook contains the original columns plus:
+- `all`：所有子条件都必须满足
+- `any`：任意一个子条件满足即可
 
-- Match result
-- Matched rules
-- Filter time
+条件操作符：
 
-The actual output column names are Chinese: match result, matched rules, and filter time.
+- 数值：`>`, `>=`, `<`, `<=`, `==`, `!=`, `between`
+- 文本：`contains`, `not_contains`, `in`, `not_in`
+- 空值：`is_empty`, `not_empty`
 
-## Notes
+如果配置引用了输入文件里不存在的列，脚本会直接停止，并提示缺失字段，避免误选。
 
-Version 1 filters only columns already exported by Tonghuashun. It does not calculate historical K-line indicators such as MACD, moving averages, or KDJ yet.
+## 输出文件
+
+输出 Excel 只包含入选股票，并保留这些字段：
+
+- `股票名称`
+- `股票板块`
+- `主营业务`
+- 近 4 个季度的 `营收`
+- 近 4 个季度的 `净利润`
+- 近 4 个季度的 `净利润增速`
+- `近X日涨幅`
+- `近A日涨幅`
+- `命中规则`
+- `筛选时间`
+
+如果输入文件里缺少某些输出字段，脚本会提示并把对应列留空。
+
+## 后续扩展
+
+第一版只筛选同花顺导出的现有字段，不计算 MACD、均线、KDJ 等历史 K 线指标。后续可以增加历史行情数据源，再把本地指标计算接入规则引擎。

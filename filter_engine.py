@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import re
@@ -8,10 +8,10 @@ from typing import Any, Iterable
 import pandas as pd
 
 
-COL_MATCHED = "\u547d\u4e2d\u7ed3\u679c"
-COL_RULES = "\u547d\u4e2d\u89c4\u5219"
-YES = "\u662f"
-NO = "\u5426"
+COL_MATCHED = "命中结果"
+COL_RULES = "命中规则"
+YES = "是"
+NO = "否"
 
 SUPPORTED_OPERATORS = {
     ">",
@@ -37,20 +37,20 @@ class FilterResult:
 
 
 class RuleConfigError(ValueError):
-    """Raised when the rule configuration is invalid."""
+    """规则配置格式不正确时抛出。"""
 
 
 class MissingFieldError(RuleConfigError):
-    """Raised when input data does not contain a required rule field."""
+    """输入文件缺少规则引用字段时抛出。"""
 
 
 def validate_rules_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(config, dict):
-        raise RuleConfigError("Rule config must be a JSON object.")
+        raise RuleConfigError("规则配置必须是 JSON 对象。")
     if "rules" not in config:
-        raise RuleConfigError("Rule config must contain a rules root node.")
+        return {"rules": {"all": []}}
     if not isinstance(config["rules"], dict):
-        raise RuleConfigError("rules must be a rule group object.")
+        raise RuleConfigError("rules 必须是一个规则分组对象。")
     return config
 
 
@@ -65,12 +65,18 @@ def ensure_required_fields(rule: dict[str, Any], columns: Iterable[str]) -> None
     required = collect_required_fields(rule)
     missing = sorted(field for field in required if field not in available)
     if missing:
-        raise MissingFieldError("Input file is missing rule fields: " + ", ".join(missing))
+        raise MissingFieldError("输入文件缺少规则引用字段: " + ", ".join(missing))
 
 
 def evaluate_dataframe(df: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     config = validate_rules_config(config)
     root_rule = config["rules"]
+    if _is_empty_group(root_rule):
+        output = df.copy()
+        output[COL_MATCHED] = YES
+        output[COL_RULES] = ""
+        return output
+
     ensure_required_fields(root_rule, df.columns)
 
     results = [evaluate_row(row, root_rule) for _, row in df.iterrows()]
@@ -87,23 +93,23 @@ def evaluate_row(row: pd.Series, rule: dict[str, Any]) -> FilterResult:
 
 def _walk_rule(rule: dict[str, Any], fields: set[str]) -> None:
     if not isinstance(rule, dict):
-        raise RuleConfigError("Each rule must be a JSON object.")
+        raise RuleConfigError("每条规则必须是 JSON 对象。")
 
     if "field" in rule:
         field = rule.get("field")
         if not isinstance(field, str) or not field.strip():
-            raise RuleConfigError("Condition field must be a non-empty string.")
+            raise RuleConfigError("条件规则的 field 必须是非空字符串。")
         fields.add(field.strip())
         _validate_condition(rule)
         return
 
     logic_keys = [key for key in ("all", "any") if key in rule]
     if len(logic_keys) != 1:
-        raise RuleConfigError("A group rule must contain exactly one of all or any.")
+        raise RuleConfigError("分组规则必须且只能包含 all 或 any。")
 
     children = rule[logic_keys[0]]
-    if not isinstance(children, list) or not children:
-        raise RuleConfigError(f"{logic_keys[0]} must be a non-empty array.")
+    if not isinstance(children, list):
+        raise RuleConfigError(f"{logic_keys[0]} 必须是数组。")
 
     for child in children:
         _walk_rule(child, fields)
@@ -112,21 +118,21 @@ def _walk_rule(rule: dict[str, Any], fields: set[str]) -> None:
 def _validate_condition(rule: dict[str, Any]) -> None:
     operator = rule.get("operator")
     if operator not in SUPPORTED_OPERATORS:
-        raise RuleConfigError(f"Unsupported operator: {operator}")
+        raise RuleConfigError(f"不支持的操作符: {operator}")
 
     if operator in {"is_empty", "not_empty"}:
         return
 
     if "value" not in rule:
-        raise RuleConfigError(f"Condition for field {rule.get('field')} is missing value.")
+        raise RuleConfigError(f"字段 {rule.get('field')} 的条件缺少 value。")
 
     if operator == "between":
         value = rule.get("value")
         if not isinstance(value, list) or len(value) != 2:
-            raise RuleConfigError("between value must be a two-item array, for example [0, 10].")
+            raise RuleConfigError("between 的 value 必须是两个元素的数组，例如 [0, 10]。")
 
     if operator in {"in", "not_in"} and not isinstance(rule.get("value"), list):
-        raise RuleConfigError(f"{operator} value must be an array.")
+        raise RuleConfigError(f"{operator} 的 value 必须是数组。")
 
 
 def _evaluate_rule(row: pd.Series, rule: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -151,7 +157,7 @@ def _evaluate_rule(row: pd.Series, rule: dict[str, Any]) -> tuple[bool, list[str
                 matched_rules.extend(child_matches)
         return bool(matched_rules), ([_rule_name(rule)] + matched_rules if matched_rules else [])
 
-    raise RuleConfigError("A group rule must contain all or any.")
+    raise RuleConfigError("分组规则必须包含 all 或 any。")
 
 
 def _evaluate_condition(row: pd.Series, rule: dict[str, Any]) -> bool:
@@ -189,7 +195,7 @@ def _evaluate_condition(row: pd.Series, rule: dict[str, Any]) -> bool:
         found = actual_text in expected_values
         return found if operator == "in" else not found
 
-    raise RuleConfigError(f"Unsupported operator: {operator}")
+    raise RuleConfigError(f"不支持的操作符: {operator}")
 
 
 def _compare(actual: Any, expected: Any, operator: str) -> bool:
@@ -205,7 +211,7 @@ def _compare(actual: Any, expected: Any, operator: str) -> bool:
         return actual == expected
     if operator == "!=":
         return actual != expected
-    raise RuleConfigError(f"Unsupported comparison operator: {operator}")
+    raise RuleConfigError(f"不支持的比较操作符: {operator}")
 
 
 def _rule_name(rule: dict[str, Any]) -> str:
@@ -214,7 +220,7 @@ def _rule_name(rule: dict[str, Any]) -> str:
         return name.strip()
     if "field" in rule:
         return f"{rule.get('field')} {rule.get('operator')} {rule.get('value', '')}".strip()
-    return "Unnamed group"
+    return "未命名分组"
 
 
 def _is_empty(value: Any) -> bool:
@@ -240,11 +246,12 @@ def _to_number(value: Any) -> float | None:
         return float(value)
 
     text = str(value).strip()
-    if text in {"--", "-", "\u65e0", "nan", "NaN", "None"}:
+    if text in {"--", "-", "无", "nan", "NaN", "None"}:
         return None
 
-    text = text.replace(",", "").replace("\uff0c", "")
-    text = text.replace("\uff05", "%")
+    # 同花顺导出里常见百分号、中文逗号和千分位，这里先清洗再提取数字。
+    text = text.replace(",", "").replace("，", "")
+    text = text.replace("％", "%")
     if text.endswith("%"):
         text = text[:-1].strip()
 
@@ -256,3 +263,14 @@ def _to_number(value: Any) -> float | None:
         return float(match.group(0))
     except ValueError:
         return None
+
+
+def to_number(value: Any) -> float | None:
+    return _to_number(value)
+
+
+def _is_empty_group(rule: dict[str, Any]) -> bool:
+    return (
+        isinstance(rule, dict)
+        and (("all" in rule and rule["all"] == []) or ("any" in rule and rule["any"] == []))
+    )
