@@ -1,0 +1,54 @@
+{
+  "name": "\u540c\u82b1\u987a\u5bfc\u51fa\u6df7\u5408\u7b5b\u9009\u793a\u4f8b",
+  "rules": {
+    "name": "\u6280\u672f\u9762\u5168\u90e8\u6ee1\u8db3\uff0c\u4e14\u57fa\u672c\u9762/\u9898\u6750\u6ee1\u8db3\u4efb\u4e00",
+    "all": [
+      {
+        "name": "\u6280\u672f\u9762",
+        "all": [
+          {
+            "name": "\u6da8\u5e45\u5728 0 \u5230 7 \u4e2a\u70b9\u4e4b\u95f4",
+            "field": "\u6da8\u8dcc\u5e45",
+            "operator": "between",
+            "value": [0, 7]
+          },
+          {
+            "name": "\u6362\u624b\u7387\u4e0d\u4f4e\u4e8e 2%",
+            "field": "\u6362\u624b\u7387",
+            "operator": ">=",
+            "value": 2
+          },
+          {
+            "name": "\u91cf\u6bd4\u4e0d\u4f4e\u4e8e 1",
+            "field": "\u91cf\u6bd4",
+            "operator": ">=",
+            "value": 1
+          }
+        ]
+      },
+      {
+        "name": "\u57fa\u672c\u9762\u6216\u9898\u6750",
+        "any": [
+          {
+            "name": "\u5e02\u76c8\u7387 0 \u5230 80",
+            "field": "\u5e02\u76c8\u7387",
+            "operator": "between",
+            "value": [0, 80]
+          },
+          {
+            "name": "\u5e02\u503c\u4e0d\u4f4e\u4e8e 50 \u4ebf",
+            "field": "\u603b\u5e02\u503c",
+            "operator": ">=",
+            "value": 50
+          },
+          {
+            "name": "\u6982\u5ff5\u5305\u542b\u4eba\u5de5\u667a\u80fd",
+            "field": "\u6982\u5ff5",
+            "operator": "contains",
+            "value": "\u4eba\u5de5\u667a\u80fd"
+          }
+        ]
+      }
+    ]
+  }
+}
