@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>板块动量看板</title>
+<style>
+:root { color-scheme: light; --text: #202124; --muted: #5f6368; --line: #dadce0; --red: #c5221f; --green: #188038; --bg: #f7f8fa; --panel: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif; }
+.shell { max-width: 1280px; margin: 0 auto; padding: 24px; }
+.hero { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; padding: 24px 0 18px; border-bottom: 1px solid var(--line); }
+h1 { margin: 0 0 10px; font-size: 32px; line-height: 1.2; }
+h2 { margin: 28px 0 14px; font-size: 22px; }
+h3 { margin: 0 0 12px; font-size: 17px; }
+p { margin: 0; color: var(--muted); line-height: 1.7; }
+.meta { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 10px; margin: 0; min-width: 360px; }
+.meta div, .ranking-card, .chart-section, .status-section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.meta div { padding: 12px; }
+dt { color: var(--muted); font-size: 12px; }
+dd { margin: 4px 0 0; font-weight: 700; }
+.chart-section, .status-section { padding: 18px; }
+.ranking-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ranking-card { padding: 14px; min-width: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 6px; border-bottom: 1px solid #eceff3; text-align: right; white-space: nowrap; }
+th:nth-child(2), td:nth-child(2), .status-section td:last-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+.empty { color: var(--muted); text-align: center !important; }
+svg { width: 100%; height: auto; display: block; }
+.axis { stroke: #9aa0a6; stroke-width: 1.2; }
+.grid { stroke: #e8eaed; stroke-width: 1; }
+.trend { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+.tick, .date-label, .legend { fill: #5f6368; font-size: 13px; }
+.quality { color: var(--muted); line-height: 1.7; }
+@media (max-width: 900px) { .hero { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
+</style>
+</head>
+<body>
+<main class="shell">
+
+<header class="hero">
+  <div>
+    <h1>板块动量看板</h1>
+    <p>按最近可用交易日回看 5、10、20、30、45、60 个交易日，跟踪累计涨幅领先的行业与概念板块。</p>
+  </div>
+  <dl class="meta">
+    <div><dt>最近数据日期</dt><dd>2026-06-26</dd></div>
+    <div><dt>生成时间</dt><dd>2026-06-28 22:34:53</dd></div>
+    <div><dt>行业板块</dt><dd>4</dd></div>
+    <div><dt>概念板块</dt><dd>4</dd></div>
+  </dl>
+</header>
+
+<section class="chart-section">
+<h2>重点趋势对比</h2>
+<svg viewBox="0 0 980 360" role="img" aria-label="重点板块累计涨幅趋势图">
+<line class="axis" x1="64" y1="30" x2="64" y2="306" />
+<line class="axis" x1="64" y1="306" x2="956" y2="306" />
+<line class="grid" x1="64" y1="306.00" x2="956" y2="306.00" />
+<text class="tick" x="12" y="310.00">0.0%</text>
+<line class="grid" x1="64" y1="306.00" x2="956" y2="306.00" />
+<text class="tick" x="12" y="310.00">0.0%</text>
+<line class="grid" x1="64" y1="30.00" x2="956" y2="30.00" />
+<text class="tick" x="12" y="34.00">34.0%</text>
+<polyline class="trend" points="64.00,306.00 79.12,300.64 94.24,295.27 109.36,289.83 124.47,284.46 139.59,279.10 154.71,273.73 169.83,268.29 184.95,269.83 200.07,264.47 215.19,259.11 230.31,253.74 245.42,248.30 260.54,242.93 275.66,237.57 290.78,232.20 305.90,226.84 321.02,228.30 336.14,222.94 351.25,217.58 366.37,212.21 381.49,206.85 396.61,201.40 411.73,196.04 426.85,190.67 441.97,185.31 457.08,186.86 472.20,181.41 487.32,176.05 502.44,170.68 517.56,165.32 532.68,159.87 547.80,154.51 562.92,149.14 578.03,143.78 593.15,145.33 608.27,139.88 623.39,134.52 638.51,129.15 653.63,123.79 668.75,118.42 683.86,112.98 698.98,107.61 714.10,102.25 729.22,103.80 744.34,98.43 759.46,92.99 774.58,87.62 789.69,82.26 804.81,76.89 819.93,71.45 835.05,66.08 850.17,60.72 865.29,62.27 880.41,56.90 895.53,51.46 910.64,46.09 925.76,40.73 940.88,35.36 956.00,30.00" stroke="#d83b36" />
+<line x1="64" y1="340" x2="88" y2="340" stroke="#d83b36" stroke-width="3" />
+<text class="legend" x="96" y="344">银行</text>
+<polyline class="trend" points="64.00,306.00 79.12,300.64 94.24,295.27 109.36,289.83 124.47,284.46 139.59,279.10 154.71,273.73 169.83,268.29 184.95,269.83 200.07,264.47 215.19,259.11 230.31,253.74 245.42,248.30 260.54,242.93 275.66,237.57 290.78,232.20 305.90,226.84 321.02,228.30 336.14,222.94 351.25,217.58 366.37,212.21 381.49,206.85 396.61,201.40 411.73,196.04 426.85,190.67 441.97,185.31 457.08,186.86 472.20,181.41 487.32,176.05 502.44,170.68 517.56,165.32 532.68,159.87 547.80,154.51 562.92,149.14 578.03,143.78 593.15,145.33 608.27,139.88 623.39,134.52 638.51,129.15 653.63,123.79 668.75,118.42 683.86,112.98 698.98,107.61 714.10,102.25 729.22,103.80 744.34,98.43 759.46,92.99 774.58,87.62 789.69,82.26 804.81,76.89 819.93,71.45 835.05,66.08 850.17,60.72 865.29,62.27 880.41,56.90 895.53,51.46 910.64,46.09 925.76,40.73 940.88,35.36 956.00,30.00" stroke="#0078d4" />
+<line x1="274" y1="340" x2="298" y2="340" stroke="#0078d4" stroke-width="3" />
+<text class="legend" x="306" y="344">AI应用</text>
+<text class="date-label" x="64" y="326">2026-04-06</text>
+<text class="date-label" x="864" y="326">2026-06-26</text>
+</svg>
+</section>
+
+<section class="rank-section">
+  <h2>行业板块</h2>
+  <div class="ranking-grid">
+    
+<article class="ranking-card">
+  <h3>5日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>2.53%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>2.28%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>2.00%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>1.68%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>10日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>4.50%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>3.94%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>3.31%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>2.63%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>20日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>9.43%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>8.19%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>6.86%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>5.41%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>30日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>14.84%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>12.81%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>10.65%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>8.33%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>45日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>23.56%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>20.05%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>16.39%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>12.57%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>60日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>银行</td><td>34.86%</td><td>1416.00</td></tr>
+<tr><td>2</td><td>小金属</td><td>29.39%</td><td>1347.00</td></tr>
+<tr><td>3</td><td>软件开发</td><td>23.84%</td><td>1278.00</td></tr>
+<tr><td>4</td><td>半导体</td><td>18.18%</td><td>1209.00</td></tr></tbody>
+  </table>
+</article>
+
+  </div>
+</section>
+
+
+<section class="rank-section">
+  <h2>概念板块</h2>
+  <div class="ranking-grid">
+    
+<article class="ranking-card">
+  <h3>5日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>2.53%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>2.28%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>2.00%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>1.68%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>10日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>4.50%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>3.94%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>3.31%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>2.63%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>20日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>9.43%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>8.19%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>6.86%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>5.41%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>30日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>14.84%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>12.81%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>10.65%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>8.33%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>45日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>23.56%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>20.05%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>16.39%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>12.57%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+<article class="ranking-card">
+  <h3>60日</h3>
+  <table>
+    <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+    <tbody><tr><td>1</td><td>AI应用</td><td>34.86%</td><td>1274.40</td></tr>
+<tr><td>2</td><td>算力概念</td><td>29.39%</td><td>1212.30</td></tr>
+<tr><td>3</td><td>低空经济</td><td>23.84%</td><td>1150.20</td></tr>
+<tr><td>4</td><td>机器人概念</td><td>18.18%</td><td>1088.10</td></tr></tbody>
+  </table>
+</article>
+
+  </div>
+</section>
+
+
+<section class="status-section">
+  <h2>数据源与异常</h2>
+  <table>
+    <thead><tr><th>数据源</th><th>请求数</th><th>缓存命中</th><th>失败数</th><th>疑似限流</th><th>提示</th></tr></thead>
+    <tbody><tr><td>sample</td><td>0</td><td>0</td><td>0</td><td>否</td><td></td></tr></tbody>
+  </table>
+  <ul class="quality"><li>concept_history_short: 0</li><li>industry_history_short: 0</li><li>mode: sample</li></ul>
+</section>
+
+</main>
+</body>
+</html>

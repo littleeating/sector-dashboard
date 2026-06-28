@@ -96,3 +96,42 @@ CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 ## 后续扩展
 
 第一版只筛选同花顺导出的现有字段，不计算 MACD、均线、KDJ 等历史 K 线指标。后续可以增加历史行情数据源，再把本地指标计算接入规则引擎。
+
+## 板块动量看板
+
+本项目新增一个独立的静态网页看板，用来统计行业板块和概念板块在近 `5/10/20/30/45/60` 个交易日的累计涨幅排名，并把重点板块的 60 日趋势画在同一张 SVG 图里。
+
+离线生成样例网页：
+
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' sector_dashboard.py --sample --output output/sector_dashboard/index.html
+```
+
+实时数据模式需要安装 AKShare：
+
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' -m pip install akshare
+```
+
+安装后生成实时网页：
+
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' sector_dashboard.py --output output/sector_dashboard/index.html
+```
+
+只做接口冒烟验证时，可以限制每类板块数量，避免首次验证请求过多：
+
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' sector_dashboard.py --output output/sector_dashboard/live-smoke.html --board-limit 1 --min-delay 0 --max-delay 0
+```
+
+默认安全访问策略：
+
+- 默认 `--max-workers 1`，按顺序访问数据源。
+- `--max-workers` 硬上限为 `2`，超过会直接报错。
+- 每次外部请求之间随机等待 `--min-delay 1.2` 到 `--max-delay 2.5` 秒。
+- 命中 `cache/sector_dashboard/` 缓存时不会重复请求同一板块。
+- 遇到 403、429、验证码、登录页等疑似限流信号时会停止新增外部请求，并尽量使用缓存生成页面。
+- `--board-limit` 默认为 `0`，表示全量；只建议手动验证时临时设置为 `1` 或 `2`。
+
+建议通过 Windows 任务计划程序在交易日 `16:30` 后每天运行一次实时命令，输出文件会覆盖 `output/sector_dashboard/index.html`。第一次实时运行需要建立缓存，速度会比较慢；日常更新会优先使用缓存，压力小得多。

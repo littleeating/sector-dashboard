@@ -1,0 +1,5 @@
+__pycache__/
+tests/__pycache__/
+cache/sector_dashboard/
+output/sector_dashboard/live-smoke.html
+output/sector_dashboard/screenshot.png
