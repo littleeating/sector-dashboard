@@ -127,7 +127,42 @@ class SectorDashboardRenderTest(unittest.TestCase):
             self.assertIn("行业板块", html)
             self.assertIn("概念板块", html)
             self.assertIn("东方财富行业板块（AKShare）", html)
+            self.assertIn("房地产开发", html)
+            self.assertIn("创新药", html)
+            self.assertNotIn("行业板块25", html)
+            self.assertNotIn("概念板块25", html)
             self.assertIn("<svg", html)
+
+    def test_svg_chart_has_axis_titles_and_readable_text_classes(self):
+        context = {
+            "data_date": "2026-06-26",
+            "generated_at": "2026-06-28 16:30:00",
+            "periods": [5],
+            "industry_rankings": {5: []},
+            "concept_rankings": {5: []},
+            "industry_count": 0,
+            "concept_count": 0,
+            "trend_series": [
+                TrendSeries(
+                    name="半导体",
+                    points=[
+                        TrendPoint("2026-06-24", 0.0),
+                        TrendPoint("2026-06-25", 5.0),
+                    ],
+                )
+            ],
+            "period_chart_series": {"industry": {5: []}, "concept": {5: []}},
+            "source_statuses": [],
+            "source_labels": {"industry": "来源", "concept": "来源"},
+            "quality": {},
+        }
+
+        html = render_dashboard(context)
+
+        self.assertIn("涨幅", html)
+        self.assertIn("时间", html)
+        self.assertIn(".axis-title", html)
+        self.assertIn(".legend", html)
 
     def test_default_top_n_is_twenty(self):
         self.assertEqual(DEFAULT_TOP_N, 20)

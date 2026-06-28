@@ -69,11 +69,11 @@ def render_dashboard(context: dict[str, Any]) -> str:
 
 def build_svg_chart(series: list[TrendSeries]) -> str:
     width = 980
-    height = 360
-    pad_left = 64
-    pad_right = 24
-    pad_top = 30
-    pad_bottom = 54
+    height = 460
+    pad_left = 76
+    pad_right = 30
+    pad_top = 46
+    pad_bottom = 148
 
     if not series:
         return '<div class="empty-chart">暂无可绘制趋势数据</div>'
@@ -95,9 +95,32 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     def y_at(value: float) -> float:
         return pad_top + (max_value - value) * plot_height / (max_value - min_value)
 
-    colors = ["#d83b36", "#0078d4", "#107c10", "#8764b8", "#ca5010", "#008575", "#8a2a2b", "#004e8c"]
+    colors = [
+        "#d83b36",
+        "#0078d4",
+        "#107c10",
+        "#8764b8",
+        "#ca5010",
+        "#008575",
+        "#8a2a2b",
+        "#004e8c",
+        "#b146c2",
+        "#69797e",
+        "#e3008c",
+        "#00a2ad",
+        "#ffaa44",
+        "#744da9",
+        "#498205",
+        "#c23934",
+        "#005e50",
+        "#6b69d6",
+        "#a4262c",
+        "#038387",
+    ]
     parts = [
         f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="重点板块累计涨幅趋势图">',
+        f'<text class="axis-title y-title" x="{pad_left}" y="24">涨幅(%)</text>',
+        f'<text class="axis-title x-title" x="{width - pad_right}" y="{height - pad_bottom + 24}" text-anchor="end">时间</text>',
         f'<line class="axis" x1="{pad_left}" y1="{pad_top}" x2="{pad_left}" y2="{height - pad_bottom}" />',
         f'<line class="axis" x1="{pad_left}" y1="{height - pad_bottom}" x2="{width - pad_right}" y2="{height - pad_bottom}" />',
     ]
@@ -105,9 +128,9 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     for tick_value in [min_value, 0, max_value]:
         y = y_at(tick_value)
         parts.append(f'<line class="grid" x1="{pad_left}" y1="{y:.2f}" x2="{width - pad_right}" y2="{y:.2f}" />')
-        parts.append(f'<text class="tick" x="12" y="{y + 4:.2f}">{tick_value:.1f}%</text>')
+        parts.append(f'<text class="tick" x="{pad_left - 12}" y="{y + 4:.2f}" text-anchor="end">{tick_value:.1f}%</text>')
 
-    legend_y = height - 20
+    legend_y = height - pad_bottom + 62
     for index, item in enumerate(series):
         color = colors[index % len(colors)]
         points = " ".join(
@@ -115,16 +138,16 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
             for point_index, point in enumerate(item.points)
         )
         parts.append(f'<polyline class="trend" points="{points}" stroke="{color}" />')
-        legend_x = pad_left + (index % 4) * 210
-        row_y = legend_y - (index // 4) * 22
-        parts.append(f'<line x1="{legend_x}" y1="{row_y}" x2="{legend_x + 24}" y2="{row_y}" stroke="{color}" stroke-width="3" />')
-        parts.append(f'<text class="legend" x="{legend_x + 32}" y="{row_y + 4}">{html.escape(item.name)}</text>')
+        legend_x = pad_left + (index % 5) * 176
+        row_y = legend_y + (index // 5) * 20
+        parts.append(f'<line x1="{legend_x}" y1="{row_y}" x2="{legend_x + 20}" y2="{row_y}" stroke="{color}" stroke-width="2.5" />')
+        parts.append(f'<text class="legend" x="{legend_x + 28}" y="{row_y + 4}">{html.escape(item.name)}</text>')
 
     first_dates = [item.points[0].date for item in series if item.points]
     last_dates = [item.points[-1].date for item in series if item.points]
     if first_dates and last_dates:
-        parts.append(f'<text class="date-label" x="{pad_left}" y="{height - 34}">{html.escape(min(first_dates))}</text>')
-        parts.append(f'<text class="date-label" x="{width - pad_right - 92}" y="{height - 34}">{html.escape(max(last_dates))}</text>')
+        parts.append(f'<text class="date-label" x="{pad_left}" y="{height - pad_bottom + 24}">{html.escape(min(first_dates))}</text>')
+        parts.append(f'<text class="date-label" x="{width - pad_right - 116}" y="{height - pad_bottom + 24}">{html.escape(max(last_dates))}</text>')
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -292,7 +315,9 @@ svg { width: 100%; height: auto; display: block; }
 .axis { stroke: #9aa0a6; stroke-width: 1.2; }
 .grid { stroke: #e8eaed; stroke-width: 1; }
 .trend { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
-.tick, .date-label, .legend { fill: #5f6368; font-size: 13px; }
+.axis-title { fill: #374151; font-size: 14px; font-weight: 700; }
+.tick, .date-label { fill: #5f6368; font-size: 12px; }
+.legend { fill: #5f6368; font-size: 11.5px; }
 .quality { color: var(--muted); line-height: 1.7; }
 @media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
 """
@@ -301,8 +326,8 @@ svg { width: 100%; height: auto; display: block; }
 def generate_sample_dashboard(output: str | Path) -> Path:
     output_path = Path(output)
     context = _build_context(
-        industry_histories=_sample_histories([f"行业板块{i:02d}" for i in range(1, 26)], base=1000),
-        concept_histories=_sample_histories([f"概念板块{i:02d}" for i in range(1, 26)], base=900),
+        industry_histories=_sample_histories(_sample_industry_names(), base=1000),
+        concept_histories=_sample_histories(_sample_concept_names(), base=900),
         periods=DEFAULT_PERIODS,
         top_n=DEFAULT_TOP_N,
         source_statuses=[SourceStatus(source="sample", requests=0, cache_hits=0)],
@@ -311,6 +336,66 @@ def generate_sample_dashboard(output: str | Path) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_dashboard(context), encoding="utf-8")
     return output_path
+
+
+def _sample_industry_names() -> list[str]:
+    return [
+        "半导体",
+        "软件开发",
+        "小金属",
+        "银行",
+        "证券",
+        "通信设备",
+        "光伏设备",
+        "电池",
+        "消费电子",
+        "汽车零部件",
+        "医疗服务",
+        "中药",
+        "化学制药",
+        "军工电子",
+        "航天航空",
+        "工程机械",
+        "工业金属",
+        "贵金属",
+        "白酒",
+        "食品饮料",
+        "电力",
+        "煤炭行业",
+        "游戏",
+        "互联网服务",
+        "房地产开发",
+    ]
+
+
+def _sample_concept_names() -> list[str]:
+    return [
+        "机器人概念",
+        "低空经济",
+        "算力概念",
+        "AI应用",
+        "人工智能",
+        "数据要素",
+        "鸿蒙概念",
+        "国产芯片",
+        "第三代半导体",
+        "先进封装",
+        "液冷服务器",
+        "云计算",
+        "信创",
+        "车联网",
+        "无人驾驶",
+        "固态电池",
+        "储能",
+        "光刻机",
+        "商业航天",
+        "卫星导航",
+        "新型工业化",
+        "中特估",
+        "跨境支付",
+        "数字货币",
+        "创新药",
+    ]
 
 
 def generate_live_dashboard(
