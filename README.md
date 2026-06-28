@@ -135,3 +135,17 @@ CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 - `--board-limit` 默认为 `0`，表示全量；只建议手动验证时临时设置为 `1` 或 `2`。
 
 建议通过 Windows 任务计划程序在交易日 `16:30` 后每天运行一次实时命令，输出文件会覆盖 `output/sector_dashboard/index.html`。第一次实时运行需要建立缓存，速度会比较慢；日常更新会优先使用缓存，压力小得多。
+
+也可以先手动运行更新脚本：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/update_sector_dashboard.ps1
+```
+
+确认实时模式可用后，再用管理员或当前用户权限注册每日任务：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/register_sector_dashboard_task.ps1
+```
+
+注册后会创建名为 `SectorMomentumDashboardDailyUpdate` 的 Windows 任务计划，每天 `16:30` 运行 `scripts/update_sector_dashboard.ps1`。
