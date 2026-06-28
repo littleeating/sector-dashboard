@@ -14,7 +14,11 @@ from sector_momentum import RankingRow, TrendPoint, TrendSeries, build_trend_ser
 
 
 DEFAULT_PERIODS = [5, 10, 20, 30, 45, 60]
-DEFAULT_TOP_N = 10
+DEFAULT_TOP_N = 20
+SOURCE_LABELS = {
+    "industry": "东方财富行业板块（AKShare）",
+    "concept": "东方财富概念板块（AKShare）",
+}
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,8 @@ def render_dashboard(context: dict[str, Any]) -> str:
     periods = [int(period) for period in context["periods"]]
     industry_rankings = context["industry_rankings"]
     concept_rankings = context["concept_rankings"]
+    period_chart_series = context.get("period_chart_series", {"industry": {}, "concept": {}})
+    source_labels = context.get("source_labels", SOURCE_LABELS)
     source_statuses = context.get("source_statuses", [])
     quality = context.get("quality", {})
 
@@ -44,13 +50,17 @@ def render_dashboard(context: dict[str, Any]) -> str:
             '<main class="shell">',
             _render_header(context),
             '<section class="chart-section">',
-            "<h2>重点趋势对比</h2>",
-            build_svg_chart(context.get("trend_series", [])),
+            '<div class="chart-heading">',
+            "<h2>趋势对比</h2>",
+            '<p id="chart-caption">默认显示各周期榜首去重后的重点板块。点击下方任一周期排名，可切换为该周期全部入榜板块曲线。</p>',
+            "</div>",
+            _render_chart_panels(context.get("trend_series", []), period_chart_series),
             "</section>",
-            _render_rankings("行业板块", industry_rankings, periods),
-            _render_rankings("概念板块", concept_rankings, periods),
+            _render_rankings("行业板块", "industry", source_labels.get("industry", ""), industry_rankings, periods),
+            _render_rankings("概念板块", "concept", source_labels.get("concept", ""), concept_rankings, periods),
             _render_statuses(source_statuses, quality),
             "</main>",
+            _interaction_script(),
             "</body>",
             "</html>",
         ]
@@ -120,6 +130,23 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     return "\n".join(parts)
 
 
+def _render_chart_panels(
+    overview_series: list[TrendSeries],
+    period_chart_series: dict[str, dict[int, list[TrendSeries]]],
+) -> str:
+    panels = [
+        f'<div class="chart-panel active" data-chart-key="overview" data-chart-title="重点板块趋势对比">{build_svg_chart(overview_series)}</div>'
+    ]
+    labels = {"industry": "行业板块", "concept": "概念板块"}
+    for category in ("industry", "concept"):
+        for period, series in sorted(period_chart_series.get(category, {}).items()):
+            title = f"{labels[category]} {period}日入榜板块趋势"
+            panels.append(
+                f'<div class="chart-panel" data-chart-key="{category}-{period}" data-chart-title="{html.escape(title)}" hidden>{build_svg_chart(series)}</div>'
+            )
+    return "\n".join(panels)
+
+
 def _render_header(context: dict[str, Any]) -> str:
     return f"""
 <header class="hero">
@@ -137,7 +164,13 @@ def _render_header(context: dict[str, Any]) -> str:
 """
 
 
-def _render_rankings(title: str, rankings: dict[int, list[RankingRow]], periods: list[int]) -> str:
+def _render_rankings(
+    title: str,
+    category: str,
+    source_label: str,
+    rankings: dict[int, list[RankingRow]],
+    periods: list[int],
+) -> str:
     cards = []
     for period in periods:
         rows = rankings.get(period, [])
@@ -151,7 +184,7 @@ def _render_rankings(title: str, rankings: dict[int, list[RankingRow]], periods:
         cards.append(
             f"""
 <article class="ranking-card">
-  <h3>{period}日</h3>
+  <button class="period-button" type="button" data-chart-key="{category}-{period}" onclick="showPeriodChart('{category}-{period}')">{period}日</button>
   <table>
     <thead><tr><th>名次</th><th>板块</th><th>累计涨幅</th><th>收盘</th></tr></thead>
     <tbody>{body}</tbody>
@@ -162,11 +195,40 @@ def _render_rankings(title: str, rankings: dict[int, list[RankingRow]], periods:
 
     return f"""
 <section class="rank-section">
-  <h2>{html.escape(title)}</h2>
+  <div class="section-title">
+    <h2>{html.escape(title)}</h2>
+    <p>数据来源：{html.escape(source_label)}</p>
+  </div>
   <div class="ranking-grid">
     {''.join(cards)}
   </div>
 </section>
+"""
+
+
+def _interaction_script() -> str:
+    return """
+<script>
+function showPeriodChart(key) {
+  const panels = document.querySelectorAll('.chart-panel');
+  let activeTitle = '重点板块趋势对比';
+  panels.forEach((panel) => {
+    const isActive = panel.dataset.chartKey === key;
+    panel.hidden = !isActive;
+    panel.classList.toggle('active', isActive);
+    if (isActive && panel.dataset.chartTitle) {
+      activeTitle = panel.dataset.chartTitle;
+    }
+  });
+  document.querySelectorAll('.period-button').forEach((button) => {
+    button.classList.toggle('selected', button.dataset.chartKey === key);
+  });
+  const caption = document.getElementById('chart-caption');
+  if (caption) {
+    caption.textContent = activeTitle + '。再次点击其他周期可切换图表。';
+  }
+}
+</script>
 """
 
 
@@ -211,8 +273,16 @@ p { margin: 0; color: var(--muted); line-height: 1.7; }
 dt { color: var(--muted); font-size: 12px; }
 dd { margin: 4px 0 0; font-weight: 700; }
 .chart-section, .status-section { padding: 18px; }
+.chart-heading { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; margin-bottom: 12px; }
+.chart-heading h2 { margin-top: 0; }
+.chart-heading p { max-width: 680px; font-size: 13px; }
+.chart-panel[hidden] { display: none; }
+.section-title { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
+.section-title p { font-size: 13px; }
 .ranking-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .ranking-card { padding: 14px; min-width: 0; }
+.period-button { width: 100%; margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: #f8fafc; color: var(--text); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+.period-button:hover, .period-button.selected { border-color: #0078d4; color: #005a9e; background: #eef6ff; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 8px 6px; border-bottom: 1px solid #eceff3; text-align: right; white-space: nowrap; }
 th:nth-child(2), td:nth-child(2), .status-section td:last-child { text-align: left; }
@@ -224,15 +294,15 @@ svg { width: 100%; height: auto; display: block; }
 .trend { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
 .tick, .date-label, .legend { fill: #5f6368; font-size: 13px; }
 .quality { color: var(--muted); line-height: 1.7; }
-@media (max-width: 900px) { .hero { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
+@media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
 """
 
 
 def generate_sample_dashboard(output: str | Path) -> Path:
     output_path = Path(output)
     context = _build_context(
-        industry_histories=_sample_histories(["半导体", "软件开发", "小金属", "银行"], base=1000),
-        concept_histories=_sample_histories(["机器人概念", "低空经济", "算力概念", "AI应用"], base=900),
+        industry_histories=_sample_histories([f"行业板块{i:02d}" for i in range(1, 26)], base=1000),
+        concept_histories=_sample_histories([f"概念板块{i:02d}" for i in range(1, 26)], base=900),
         periods=DEFAULT_PERIODS,
         top_n=DEFAULT_TOP_N,
         source_statuses=[SourceStatus(source="sample", requests=0, cache_hits=0)],
@@ -363,6 +433,10 @@ def _build_context(
     selected_names = _selected_trend_names(industry_rankings, concept_rankings)
     all_histories = {**industry_histories, **concept_histories}
     trend_series = build_trend_series(all_histories, selected_names, lookback=max(periods))
+    period_chart_series = {
+        "industry": _build_period_chart_series(industry_histories, industry_rankings),
+        "concept": _build_period_chart_series(concept_histories, concept_rankings),
+    }
     data_date = _latest_data_date(all_histories)
     merged_quality = {
         **quality,
@@ -378,9 +452,22 @@ def _build_context(
         "industry_count": len(industry_histories),
         "concept_count": len(concept_histories),
         "trend_series": trend_series,
+        "period_chart_series": period_chart_series,
         "source_statuses": source_statuses,
+        "source_labels": SOURCE_LABELS,
         "quality": merged_quality,
     }
+
+
+def _build_period_chart_series(
+    histories: dict[str, pd.DataFrame],
+    rankings: dict[int, list[RankingRow]],
+) -> dict[int, list[TrendSeries]]:
+    output: dict[int, list[TrendSeries]] = {}
+    for period, rows in rankings.items():
+        names = [row.name for row in rows]
+        output[period] = build_trend_series(histories, names, lookback=period + 1)
+    return output
 
 
 def _selected_trend_names(
