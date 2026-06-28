@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -10,6 +11,7 @@ from sector_dashboard import (
     _build_context,
     _limit_boards,
     _load_board_infos,
+    generate_live_dashboard,
     generate_sample_dashboard,
     render_dashboard,
 )
@@ -163,6 +165,75 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertIn("时间", html)
         self.assertIn(".axis-title", html)
         self.assertIn(".legend", html)
+
+    def test_svg_chart_marks_each_daily_point_and_axis_tick(self):
+        context = {
+            "data_date": "2026-06-26",
+            "generated_at": "2026-06-28 16:30:00",
+            "periods": [5],
+            "industry_rankings": {5: []},
+            "concept_rankings": {5: []},
+            "industry_count": 0,
+            "concept_count": 0,
+            "trend_series": [
+                TrendSeries(
+                    name="半导体",
+                    points=[
+                        TrendPoint("2026-06-24", 0.0),
+                        TrendPoint("2026-06-25", 5.0),
+                        TrendPoint("2026-06-26", 12.34),
+                    ],
+                )
+            ],
+            "period_chart_series": {"industry": {5: []}, "concept": {5: []}},
+            "source_statuses": [],
+            "source_labels": {"industry": "来源", "concept": "来源"},
+            "quality": {},
+        }
+
+        html = render_dashboard(context)
+
+        self.assertEqual(html.count('class="daily-point"'), 3)
+        self.assertEqual(html.count('class="day-tick"'), 3)
+        self.assertIn("<title>2026-06-26: 12.34%</title>", html)
+
+    def test_live_dashboard_fetches_histories_by_board_name_not_code(self):
+        class FakeAkshare:
+            def __init__(self) -> None:
+                self.industry_symbols: list[str] = []
+                self.concept_symbols: list[str] = []
+
+            def stock_board_industry_name_em(self) -> pd.DataFrame:
+                return pd.DataFrame([{"板块名称": "半导体", "板块代码": "BK1036"}])
+
+            def stock_board_concept_name_em(self) -> pd.DataFrame:
+                return pd.DataFrame([{"板块名称": "机器人概念", "板块代码": "BK0820"}])
+
+            def stock_board_industry_hist_em(self, symbol: str, **_: object) -> pd.DataFrame:
+                self.industry_symbols.append(symbol)
+                return pd.DataFrame({"日期": ["2026-06-24", "2026-06-25"], "收盘": [100, 110]})
+
+            def stock_board_concept_hist_em(self, symbol: str, **_: object) -> pd.DataFrame:
+                self.concept_symbols.append(symbol)
+                return pd.DataFrame({"日期": ["2026-06-24", "2026-06-25"], "收盘": [100, 120]})
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_akshare = FakeAkshare()
+
+            with patch("sector_dashboard.load_akshare", return_value=fake_akshare):
+                generate_live_dashboard(
+                    Path(temp_dir) / "index.html",
+                    periods=[1],
+                    top_n=1,
+                    cache_dir=Path(temp_dir) / "cache",
+                    max_workers=1,
+                    min_delay=0,
+                    max_delay=0,
+                    board_limit=1,
+                )
+
+        self.assertEqual(fake_akshare.industry_symbols, ["半导体"])
+        self.assertEqual(fake_akshare.concept_symbols, ["机器人概念"])
 
     def test_default_top_n_is_twenty(self):
         self.assertEqual(DEFAULT_TOP_N, 20)

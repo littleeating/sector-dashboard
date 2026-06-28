@@ -52,6 +52,16 @@ class SectorDataTest(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertEqual(result.iloc[0]["close"], 100.0)
 
+    def test_cache_version_mismatch_ignores_old_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            old_cache = CacheStore(Path(temp_dir), version="old")
+            new_cache = CacheStore(Path(temp_dir), version="new")
+            history = pd.DataFrame({"date": ["2026-06-26"], "close": [100.0]})
+
+            old_cache.write_history("industry", "半导体", history, data_date="2026-06-26")
+
+            self.assertIsNone(new_cache.read_history("industry", "半导体"))
+
     def test_fetch_with_policy_retries_twice_then_records_failure(self):
         attempts = []
 

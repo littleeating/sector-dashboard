@@ -15,6 +15,7 @@ from sector_momentum import RankingRow, TrendPoint, TrendSeries, build_trend_ser
 
 DEFAULT_PERIODS = [5, 10, 20, 30, 45, 60]
 DEFAULT_TOP_N = 20
+LIVE_CACHE_VERSION = "akshare-board-name-v2"
 SOURCE_LABELS = {
     "industry": "东方财富行业板块（AKShare）",
     "concept": "东方财富概念板块（AKShare）",
@@ -84,13 +85,17 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     if min_value == max_value:
         max_value = min_value + 1
 
-    max_len = max(len(item.points) for item in series)
-    x_span = max(max_len - 1, 1)
+    domain_dates = sorted({point.date for item in series for point in item.points})
+    date_indexes = {date: index for index, date in enumerate(domain_dates)}
+    x_span = max(len(domain_dates) - 1, 1)
     plot_width = width - pad_left - pad_right
     plot_height = height - pad_top - pad_bottom
 
     def x_at(index: int) -> float:
         return pad_left + plot_width * index / x_span
+
+    def x_for_date(date: str) -> float:
+        return x_at(date_indexes[date])
 
     def y_at(value: float) -> float:
         return pad_top + (max_value - value) * plot_height / (max_value - min_value)
@@ -125,6 +130,14 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
         f'<line class="axis" x1="{pad_left}" y1="{height - pad_bottom}" x2="{width - pad_right}" y2="{height - pad_bottom}" />',
     ]
 
+    for date in domain_dates:
+        x = x_for_date(date)
+        label = date[5:] if len(date) >= 10 else date
+        parts.append(f'<line class="day-tick" x1="{x:.2f}" y1="{height - pad_bottom}" x2="{x:.2f}" y2="{height - pad_bottom + 6}" />')
+        parts.append(
+            f'<text class="day-label" x="{x:.2f}" y="{height - pad_bottom + 22}" transform="rotate(45 {x:.2f} {height - pad_bottom + 22})">{html.escape(label)}</text>'
+        )
+
     for tick_value in [min_value, 0, max_value]:
         y = y_at(tick_value)
         parts.append(f'<line class="grid" x1="{pad_left}" y1="{y:.2f}" x2="{width - pad_right}" y2="{y:.2f}" />')
@@ -134,20 +147,20 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     for index, item in enumerate(series):
         color = colors[index % len(colors)]
         points = " ".join(
-            f"{x_at(point_index):.2f},{y_at(point.return_pct):.2f}"
-            for point_index, point in enumerate(item.points)
+            f"{x_for_date(point.date):.2f},{y_at(point.return_pct):.2f}"
+            for point in item.points
         )
         parts.append(f'<polyline class="trend" points="{points}" stroke="{color}" />')
+        for point in item.points:
+            x = x_for_date(point.date)
+            y = y_at(point.return_pct)
+            parts.append(
+                f'<circle class="daily-point" cx="{x:.2f}" cy="{y:.2f}" r="2.8" fill="{color}"><title>{html.escape(point.date)}: {point.return_pct:.2f}%</title></circle>'
+            )
         legend_x = pad_left + (index % 5) * 176
         row_y = legend_y + (index // 5) * 20
         parts.append(f'<line x1="{legend_x}" y1="{row_y}" x2="{legend_x + 20}" y2="{row_y}" stroke="{color}" stroke-width="2.5" />')
         parts.append(f'<text class="legend" x="{legend_x + 28}" y="{row_y + 4}">{html.escape(item.name)}</text>')
-
-    first_dates = [item.points[0].date for item in series if item.points]
-    last_dates = [item.points[-1].date for item in series if item.points]
-    if first_dates and last_dates:
-        parts.append(f'<text class="date-label" x="{pad_left}" y="{height - pad_bottom + 24}">{html.escape(min(first_dates))}</text>')
-        parts.append(f'<text class="date-label" x="{width - pad_right - 116}" y="{height - pad_bottom + 24}">{html.escape(max(last_dates))}</text>')
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -316,8 +329,10 @@ svg { width: 100%; height: auto; display: block; }
 .grid { stroke: #e8eaed; stroke-width: 1; }
 .trend { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
 .axis-title { fill: #374151; font-size: 14px; font-weight: 700; }
-.tick, .date-label { fill: #5f6368; font-size: 12px; }
+.tick, .date-label, .day-label { fill: #5f6368; font-size: 10px; }
 .legend { fill: #5f6368; font-size: 11.5px; }
+.day-tick { stroke: #9aa0a6; stroke-width: 1; }
+.daily-point { stroke: #fff; stroke-width: 1.4; }
 .quality { color: var(--muted); line-height: 1.7; }
 @media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
 """
@@ -411,7 +426,7 @@ def generate_live_dashboard(
 ) -> Path:
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
-    cache = CacheStore(cache_dir)
+    cache = CacheStore(cache_dir, version=LIVE_CACHE_VERSION)
     status = SourceStatus(source="eastmoney")
     ak = load_akshare()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -430,7 +445,7 @@ def generate_live_dashboard(
         policy=policy,
         fetcher_factory=lambda board: lambda: _normalize_history(
             ak.stock_board_industry_hist_em(
-                symbol=board.code,
+                symbol=board.name,
                 start_date=start_date,
                 end_date=end_date,
                 period="日k",
@@ -447,7 +462,7 @@ def generate_live_dashboard(
         policy=policy,
         fetcher_factory=lambda board: lambda: _normalize_history(
             ak.stock_board_concept_hist_em(
-                symbol=board.code,
+                symbol=board.name,
                 start_date=start_date,
                 end_date=end_date,
                 period="daily",
@@ -517,7 +532,7 @@ def _build_context(
     concept_rankings, concept_quality = rank_sectors(concept_histories, periods, top_n)
     selected_names = _selected_trend_names(industry_rankings, concept_rankings)
     all_histories = {**industry_histories, **concept_histories}
-    trend_series = build_trend_series(all_histories, selected_names, lookback=max(periods))
+    trend_series = build_trend_series(all_histories, selected_names, lookback=max(periods) + 1)
     period_chart_series = {
         "industry": _build_period_chart_series(industry_histories, industry_rankings),
         "concept": _build_period_chart_series(concept_histories, concept_rankings),

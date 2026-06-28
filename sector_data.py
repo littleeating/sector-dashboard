@@ -56,20 +56,24 @@ class SourceStatus:
 
 
 class CacheStore:
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, version: str = "v1"):
         self.root = Path(root)
+        self.version = version
 
     def read_history(self, category: str, name: str) -> tuple[pd.DataFrame, str] | None:
         path = self._history_path(category, name)
         if not path.exists():
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("cache_version", "v1") != self.version:
+            return None
         return pd.DataFrame(payload["rows"]), str(payload["data_date"])
 
     def write_history(self, category: str, name: str, history: pd.DataFrame, data_date: str) -> None:
         path = self._history_path(category, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "cache_version": self.version,
             "data_date": data_date,
             "rows": history.to_dict(orient="records"),
         }
