@@ -380,6 +380,66 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(requested_stocks, ["600000"])
         self.assertIn("FastStock", histories["industry"]["SectorA"])
 
+    def test_load_sector_stock_histories_prefers_repeated_candidate_stocks_and_uses_global_cache(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            policy = AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=())
+            requested_stocks: list[str] = []
+
+            def fake_constituents(board: BoardInfo, **_: object) -> list[StockInfo]:
+                if board.name == "SectorA":
+                    return [
+                        StockInfo("SharedStock", "600001"),
+                        StockInfo("OnlyA", "600002"),
+                    ]
+                return [
+                    StockInfo("SharedStock", "600001"),
+                    StockInfo("OnlyB", "600003"),
+                ]
+
+            def fake_stock_history(stock: StockInfo, **_: object) -> pd.DataFrame:
+                requested_stocks.append(stock.code)
+                return pd.DataFrame({"date": ["2026-06-25", "2026-06-26"], "close": [10, 12]})
+
+            with patch("sector_dashboard._fetch_eastmoney_board_constituents", side_effect=fake_constituents), patch(
+                "sector_dashboard._fetch_eastmoney_stock_history", side_effect=fake_stock_history
+            ):
+                histories = _load_sector_stock_histories(
+                    cache=cache,
+                    akshare_client=object(),
+                    periods=[5],
+                    rankings_by_category={
+                        "industry": {
+                            5: [
+                                RankingRow("SectorA", 10, "2026-06-26", 110),
+                                RankingRow("SectorB", 9, "2026-06-26", 109),
+                            ]
+                        },
+                        "concept": {},
+                    },
+                    boards_by_category={
+                        "industry": {
+                            "SectorA": BoardInfo("SectorA", "BK0001"),
+                            "SectorB": BoardInfo("SectorB", "BK0002"),
+                        },
+                        "concept": {},
+                    },
+                    latest_date="2026-06-26",
+                    start_date="20260601",
+                    end_date="20260626",
+                    status=status,
+                    policy=policy,
+                    stock_sector_limit=0,
+                    stock_constituent_limit=0,
+                    stock_candidate_limit=1,
+                    request_budget=0,
+                )
+
+        self.assertEqual(list(histories["industry"]["SectorA"].keys()), ["SharedStock"])
+        self.assertEqual(list(histories["industry"]["SectorB"].keys()), ["SharedStock"])
+        self.assertEqual(requested_stocks, ["600001"])
+
     def test_build_context_keeps_twenty_ranked_rows_and_period_chart_series(self):
         dates = pd.bdate_range(end=pd.Timestamp("2026-06-26"), periods=70).strftime("%Y-%m-%d")
         histories = {

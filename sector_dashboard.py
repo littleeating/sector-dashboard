@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import html
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -630,6 +631,8 @@ def generate_live_dashboard(
     board_limit: int = 0,
     stock_sector_limit: int = 0,
     stock_constituent_limit: int = 0,
+    stock_candidate_limit: int = 0,
+    request_budget: int = 0,
     board_list_timeout: float = 30.0,
 ) -> Path:
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
@@ -720,6 +723,8 @@ def generate_live_dashboard(
         policy=policy,
         stock_sector_limit=stock_sector_limit,
         stock_constituent_limit=stock_constituent_limit,
+        stock_candidate_limit=stock_candidate_limit,
+        request_budget=request_budget,
     )
     context = _build_context(
         industry_histories=industry_histories,
@@ -731,6 +736,8 @@ def generate_live_dashboard(
             "max_workers": policy.max_workers,
             "stock_sector_limit": stock_sector_limit,
             "stock_constituent_limit": stock_constituent_limit,
+            "stock_candidate_limit": stock_candidate_limit,
+            "request_budget": request_budget,
         },
         sector_stock_histories=sector_stock_histories,
     )
@@ -753,6 +760,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--board-limit", type=int, default=0, help="仅用于验证的每类板块数量限制；0 表示全量。")
     parser.add_argument("--stock-sector-limit", type=int, default=0, help="抓取个股明细的入榜板块数量限制；0 表示全量。")
     parser.add_argument("--stock-constituent-limit", type=int, default=0, help="每个板块抓取历史行情的成分股数量限制；0 表示全量。")
+    parser.add_argument("--stock-candidate-limit", type=int, default=0, help="按跨板块重复度筛选每个板块候选股票数量；0 表示不启用。")
+    parser.add_argument("--request-budget", type=int, default=0, help="本轮最多新增外部请求数；0 表示不限制。")
     parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
     return parser.parse_args(argv)
 
@@ -774,6 +783,8 @@ def main(argv: list[str] | None = None) -> int:
             board_limit=args.board_limit,
             stock_sector_limit=args.stock_sector_limit,
             stock_constituent_limit=args.stock_constituent_limit,
+            stock_candidate_limit=args.stock_candidate_limit,
+            request_budget=args.request_budget,
             board_list_timeout=args.board_list_timeout,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
@@ -1060,19 +1071,27 @@ def _load_sector_stock_histories(
     policy: AccessPolicy,
     stock_sector_limit: int,
     stock_constituent_limit: int,
+    stock_candidate_limit: int = 0,
+    request_budget: int = 0,
 ) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
     if stock_sector_limit < 0:
         raise ValueError("stock_sector_limit must not be negative")
     if stock_constituent_limit < 0:
         raise ValueError("stock_constituent_limit must not be negative")
+    if stock_candidate_limit < 0:
+        raise ValueError("stock_candidate_limit must not be negative")
+    if request_budget < 0:
+        raise ValueError("request_budget must not be negative")
 
     output: dict[str, dict[str, dict[str, pd.DataFrame]]] = {"industry": {}, "concept": {}}
     selected = _selected_ranked_boards(rankings_by_category, boards_by_category, periods)
     if stock_sector_limit:
         selected = selected[:stock_sector_limit]
 
+    constituents_by_board: dict[tuple[str, str], list[StockInfo]] = {}
+    selected_with_constituents: list[tuple[str, BoardInfo]] = []
     for category, board in selected:
-        if status.limited:
+        if status.limited or _request_budget_reached(status, request_budget):
             break
         try:
             constituents = _get_or_fetch_constituents(
@@ -1092,16 +1111,25 @@ def _load_sector_stock_histories(
             status.messages.append(f"{board.name} constituents: {exc}")
             continue
 
+        constituents_by_board[(category, board.name)] = constituents
+        selected_with_constituents.append((category, board))
+
+    candidates_by_board = _select_candidate_stocks_by_board(constituents_by_board, stock_candidate_limit)
+
+    for category, board in selected_with_constituents:
+        if status.limited or _request_budget_reached(status, request_budget):
+            break
+        stocks = candidates_by_board.get((category, board.name), [])
         if stock_constituent_limit:
-            constituents = constituents[:stock_constituent_limit]
+            stocks = stocks[:stock_constituent_limit]
         output.setdefault(category, {}).setdefault(board.name, {})
-        for stock in constituents:
-            if status.limited:
+        for stock in stocks:
+            if status.limited or _request_budget_reached(status, request_budget):
                 break
             try:
                 output[category][board.name][stock.name] = get_or_fetch_history(
                     cache=cache,
-                    category=f"stock_history/{category}/{board.name}",
+                    category="stock_history/global",
                     name=_stock_cache_name(stock),
                     latest_date=latest_date,
                     fetcher=lambda stock=stock: _fetch_eastmoney_stock_history(
@@ -1116,6 +1144,42 @@ def _load_sector_stock_histories(
             except Exception as exc:
                 status.messages.append(f"{board.name}/{stock.name}: {exc}")
     return output
+
+
+def _select_candidate_stocks_by_board(
+    constituents_by_board: dict[tuple[str, str], list[StockInfo]],
+    candidate_limit: int,
+) -> dict[tuple[str, str], list[StockInfo]]:
+    if candidate_limit <= 0:
+        return constituents_by_board
+
+    frequencies = Counter(
+        _stock_identity(stock)
+        for constituents in constituents_by_board.values()
+        for stock in constituents
+    )
+    selected: dict[tuple[str, str], list[StockInfo]] = {}
+    for key, constituents in constituents_by_board.items():
+        ranked = sorted(
+            enumerate(constituents),
+            key=lambda item: (-frequencies[_stock_identity(item[1])], item[0]),
+        )
+        selected[key] = [stock for _, stock in ranked[:candidate_limit]]
+    return selected
+
+
+def _stock_identity(stock: StockInfo) -> str:
+    code = _normalize_stock_code(stock.code)
+    return code or stock.name
+
+
+def _request_budget_reached(status: SourceStatus, request_budget: int) -> bool:
+    if request_budget <= 0 or status.requests < request_budget:
+        return False
+    message = f"request budget reached ({request_budget}); resume next run from cache"
+    if message not in status.messages:
+        status.messages.append(message)
+    return True
 
 
 def _selected_ranked_boards(
