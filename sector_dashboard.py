@@ -643,6 +643,7 @@ def generate_live_dashboard(
     stock_fetch_timeout: float = 30.0,
     data_source: str = "eastmoney",
     sina_board_pool_limit: int = 40,
+    cache_only: bool = False,
 ) -> Path:
     if data_source == "sina":
         return generate_sina_dashboard(
@@ -660,6 +661,7 @@ def generate_live_dashboard(
             request_budget=request_budget,
             stock_fetch_timeout=stock_fetch_timeout,
             sina_board_pool_limit=sina_board_pool_limit,
+            cache_only=cache_only,
         )
     if data_source != "eastmoney":
         raise ValueError(f"unknown data source: {data_source}")
@@ -793,6 +795,7 @@ def generate_sina_dashboard(
     request_budget: int = 0,
     stock_fetch_timeout: float = 30.0,
     sina_board_pool_limit: int = 40,
+    cache_only: bool = False,
 ) -> Path:
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
     cache = CacheStore(cache_dir, version=f"{LIVE_CACHE_VERSION}-sina-v1")
@@ -838,6 +841,7 @@ def generate_sina_dashboard(
         request_budget=request_budget,
         stock_fetch_timeout=stock_fetch_timeout,
         source="sina",
+        cache_only=cache_only,
     )
     aggregated = _aggregate_sector_histories_from_stocks(sector_stock_histories)
     context = _build_context(
@@ -886,6 +890,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--stock-fetch-timeout", type=float, default=30.0, help="成分股和个股历史接口单次等待秒数；超时后跳过并继续。")
     parser.add_argument("--data-source", choices=["eastmoney", "sina"], default="eastmoney", help="行情数据源。")
     parser.add_argument("--sina-board-pool-limit", type=int, default=40, help="新浪模式每类按当日涨跌幅进入候选池的板块数量。")
+    parser.add_argument("--cache-only", action="store_true", help="只使用已有缓存生成页面，不新增外部请求。")
     return parser.parse_args(argv)
 
 
@@ -912,6 +917,7 @@ def main(argv: list[str] | None = None) -> int:
             stock_fetch_timeout=args.stock_fetch_timeout,
             data_source=args.data_source,
             sina_board_pool_limit=args.sina_board_pool_limit,
+            cache_only=args.cache_only,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -1234,6 +1240,7 @@ def _load_sector_stock_histories(
     request_budget: int = 0,
     stock_fetch_timeout: float = 30.0,
     source: str = "eastmoney",
+    cache_only: bool = False,
 ) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
     if stock_sector_limit < 0:
         raise ValueError("stock_sector_limit must not be negative")
@@ -1262,6 +1269,7 @@ def _load_sector_stock_histories(
                 latest_date=latest_date,
                 status=status,
                 policy=policy,
+                cache_only=cache_only,
                 fetcher=lambda category=category, board=board: _fetch_eastmoney_board_constituents(
                     board,
                     category=category,
@@ -1290,22 +1298,30 @@ def _load_sector_stock_histories(
             if status.limited or _request_budget_reached(status, request_budget):
                 break
             try:
-                output[category][board.name][stock.name] = get_or_fetch_history(
-                    cache=cache,
-                    category="stock_history/global",
-                    name=_stock_cache_name(stock),
-                    latest_date=latest_date,
-                    fetcher=lambda stock=stock: _fetch_eastmoney_stock_history(
-                        stock,
-                        start_date=start_date,
-                        end_date=end_date,
-                        akshare_client=akshare_client,
-                        timeout_seconds=stock_fetch_timeout,
-                        source=source,
-                    ),
-                    policy=policy,
-                    status=status,
-                )
+                if cache_only:
+                    cached = cache.read_history("stock_history/global", _stock_cache_name(stock))
+                    if cached is None:
+                        continue
+                    frame, _ = cached
+                    status.cache_hits += 1
+                    output[category][board.name][stock.name] = frame
+                else:
+                    output[category][board.name][stock.name] = get_or_fetch_history(
+                        cache=cache,
+                        category="stock_history/global",
+                        name=_stock_cache_name(stock),
+                        latest_date=latest_date,
+                        fetcher=lambda stock=stock: _fetch_eastmoney_stock_history(
+                            stock,
+                            start_date=start_date,
+                            end_date=end_date,
+                            akshare_client=akshare_client,
+                            timeout_seconds=stock_fetch_timeout,
+                            source=source,
+                        ),
+                        policy=policy,
+                        status=status,
+                    )
             except Exception as exc:
                 status.messages.append(f"{board.name}/{stock.name}: {exc}")
     return output
@@ -1433,6 +1449,7 @@ def _get_or_fetch_constituents(
     status: SourceStatus,
     policy: AccessPolicy,
     fetcher: Any,
+    cache_only: bool = False,
 ) -> list[StockInfo]:
     cache_category = f"constituents/{category}"
     cached = cache.read_history(cache_category, board.name)
@@ -1441,6 +1458,8 @@ def _get_or_fetch_constituents(
         if cached_date == latest_date:
             status.cache_hits += 1
             return _stock_infos_from_frame(frame)
+    if cache_only:
+        raise ValueError("missing cached constituents")
 
     frame = fetch_with_policy(
         lambda: pd.DataFrame([stock.__dict__ for stock in fetcher()]),
@@ -1686,10 +1705,10 @@ def _sina_symbol(code: str) -> str:
     if normalized.startswith(("sh", "sz", "bj")):
         return normalized
     digits = _normalize_stock_code(normalized)
+    if digits.startswith(("920", "4", "8")):
+        return f"bj{digits}"
     if digits.startswith(("5", "6", "9")):
         return f"sh{digits}"
-    if digits.startswith(("4", "8")):
-        return f"bj{digits}"
     return f"sz{digits}"
 
 

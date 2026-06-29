@@ -16,6 +16,7 @@ from sector_dashboard import (
     _load_board_infos_cached,
     _select_sina_board_pool,
     _aggregate_sector_histories_from_stocks,
+    _sina_symbol,
     generate_live_dashboard,
     generate_sample_dashboard,
     render_dashboard,
@@ -369,6 +370,11 @@ class SectorDashboardRenderTest(unittest.TestCase):
 
         self.assertEqual(sector_histories["industry"]["SectorA"]["date"].tolist(), ["2026-06-25", "2026-06-26"])
         self.assertEqual(sector_histories["industry"]["SectorA"]["close"].round(2).tolist(), [100.0, 150.0])
+
+    def test_sina_symbol_maps_beijing_920_codes_to_bj_prefix(self):
+        self.assertEqual(_sina_symbol("920058"), "bj920058")
+        self.assertEqual(_sina_symbol("600000"), "sh600000")
+        self.assertEqual(_sina_symbol("300750"), "sz300750")
 
     def test_load_sector_stock_histories_fetches_ranked_boards_and_stock_histories(self):
         with tempfile.TemporaryDirectory() as temp_dir:
