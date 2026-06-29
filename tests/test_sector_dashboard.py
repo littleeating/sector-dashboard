@@ -197,30 +197,53 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(html.count('class="day-tick"'), 3)
         self.assertIn("<title>2026-06-26: 12.34%</title>", html)
 
-    def test_live_dashboard_fetches_histories_by_board_name_not_code(self):
-        class FakeAkshare:
-            def __init__(self) -> None:
-                self.industry_symbols: list[str] = []
-                self.concept_symbols: list[str] = []
+    def test_svg_chart_keeps_daily_ticks_but_thins_crowded_date_labels(self):
+        points = [
+            TrendPoint(date.strftime("%Y-%m-%d"), float(index))
+            for index, date in enumerate(pd.bdate_range("2026-05-01", periods=24))
+        ]
+        context = {
+            "data_date": "2026-06-03",
+            "generated_at": "2026-06-28 16:30:00",
+            "periods": [20],
+            "industry_rankings": {20: []},
+            "concept_rankings": {20: []},
+            "industry_count": 0,
+            "concept_count": 0,
+            "trend_series": [TrendSeries(name="半导体", points=points)],
+            "period_chart_series": {"industry": {20: []}, "concept": {20: []}},
+            "source_statuses": [],
+            "source_labels": {"industry": "来源", "concept": "来源"},
+            "quality": {},
+        }
 
+        html = render_dashboard(context)
+
+        self.assertEqual(html.count('class="day-tick"'), 24)
+        self.assertEqual(html.count('class="daily-point"'), 24)
+        self.assertLess(html.count('class="day-label"'), 24)
+        self.assertIn(">05-01</text>", html)
+        self.assertIn(">06-03</text>", html)
+
+    def test_live_dashboard_fetches_histories_from_eastmoney_by_board_code(self):
+        class FakeAkshare:
             def stock_board_industry_name_em(self) -> pd.DataFrame:
                 return pd.DataFrame([{"板块名称": "半导体", "板块代码": "BK1036"}])
 
             def stock_board_concept_name_em(self) -> pd.DataFrame:
                 return pd.DataFrame([{"板块名称": "机器人概念", "板块代码": "BK0820"}])
 
-            def stock_board_industry_hist_em(self, symbol: str, **_: object) -> pd.DataFrame:
-                self.industry_symbols.append(symbol)
-                return pd.DataFrame({"日期": ["2026-06-24", "2026-06-25"], "收盘": [100, 110]})
-
-            def stock_board_concept_hist_em(self, symbol: str, **_: object) -> pd.DataFrame:
-                self.concept_symbols.append(symbol)
-                return pd.DataFrame({"日期": ["2026-06-24", "2026-06-25"], "收盘": [100, 120]})
-
         with tempfile.TemporaryDirectory() as temp_dir:
             fake_akshare = FakeAkshare()
+            requested_codes: list[str] = []
 
-            with patch("sector_dashboard.load_akshare", return_value=fake_akshare):
+            def fake_fetch_history(board: BoardInfo, **_: object) -> pd.DataFrame:
+                requested_codes.append(board.code)
+                return pd.DataFrame({"date": ["2026-06-24", "2026-06-25"], "close": [100, 110]})
+
+            with patch("sector_dashboard.load_akshare", return_value=fake_akshare), patch(
+                "sector_dashboard._fetch_eastmoney_board_history", side_effect=fake_fetch_history
+            ):
                 generate_live_dashboard(
                     Path(temp_dir) / "index.html",
                     periods=[1],
@@ -232,8 +255,7 @@ class SectorDashboardRenderTest(unittest.TestCase):
                     board_limit=1,
                 )
 
-        self.assertEqual(fake_akshare.industry_symbols, ["半导体"])
-        self.assertEqual(fake_akshare.concept_symbols, ["机器人概念"])
+        self.assertEqual(requested_codes, ["BK1036", "BK0820"])
 
     def test_default_top_n_is_twenty(self):
         self.assertEqual(DEFAULT_TOP_N, 20)

@@ -100,6 +100,12 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     def y_at(value: float) -> float:
         return pad_top + (max_value - value) * plot_height / (max_value - min_value)
 
+    def show_day_label(index: int) -> bool:
+        if len(domain_dates) <= 12:
+            return True
+        step = max(1, (len(domain_dates) - 1) // 10)
+        return index in {0, len(domain_dates) - 1} or index % step == 0
+
     colors = [
         "#d83b36",
         "#0078d4",
@@ -130,13 +136,14 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
         f'<line class="axis" x1="{pad_left}" y1="{height - pad_bottom}" x2="{width - pad_right}" y2="{height - pad_bottom}" />',
     ]
 
-    for date in domain_dates:
+    for date_index, date in enumerate(domain_dates):
         x = x_for_date(date)
         label = date[5:] if len(date) >= 10 else date
         parts.append(f'<line class="day-tick" x1="{x:.2f}" y1="{height - pad_bottom}" x2="{x:.2f}" y2="{height - pad_bottom + 6}" />')
-        parts.append(
-            f'<text class="day-label" x="{x:.2f}" y="{height - pad_bottom + 22}" transform="rotate(45 {x:.2f} {height - pad_bottom + 22})">{html.escape(label)}</text>'
-        )
+        if show_day_label(date_index):
+            parts.append(
+                f'<text class="day-label" x="{x:.2f}" y="{height - pad_bottom + 22}" transform="rotate(45 {x:.2f} {height - pad_bottom + 22})">{html.escape(label)}</text>'
+            )
 
     for tick_value in [min_value, 0, max_value]:
         y = y_at(tick_value)
@@ -327,12 +334,14 @@ th { color: var(--muted); font-weight: 600; }
 svg { width: 100%; height: auto; display: block; }
 .axis { stroke: #9aa0a6; stroke-width: 1.2; }
 .grid { stroke: #e8eaed; stroke-width: 1; }
-.trend { fill: none; stroke-width: 2.6; stroke-linejoin: round; stroke-linecap: round; }
+.trend { fill: none; stroke-width: 2.35; stroke-linejoin: round; stroke-linecap: round; opacity: .86; }
+.trend:hover { opacity: 1; stroke-width: 3; }
 .axis-title { fill: #374151; font-size: 14px; font-weight: 700; }
 .tick, .date-label, .day-label { fill: #5f6368; font-size: 10px; }
 .legend { fill: #5f6368; font-size: 11.5px; }
 .day-tick { stroke: #9aa0a6; stroke-width: 1; }
-.daily-point { stroke: #fff; stroke-width: 1.4; }
+.daily-point { stroke: #fff; stroke-width: 1.2; opacity: .92; }
+.daily-point:hover { r: 4; opacity: 1; }
 .quality { color: var(--muted); line-height: 1.7; }
 @media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
 """
@@ -443,14 +452,11 @@ def generate_live_dashboard(
         latest_date=today,
         status=status,
         policy=policy,
-        fetcher_factory=lambda board: lambda: _normalize_history(
-            ak.stock_board_industry_hist_em(
-                symbol=board.name,
-                start_date=start_date,
-                end_date=end_date,
-                period="日k",
-                adjust="",
-            )
+        fetcher_factory=lambda board: lambda: _fetch_eastmoney_board_history(
+            board,
+            start_date=start_date,
+            end_date=end_date,
+            endpoint="https://7.push2his.eastmoney.com/api/qt/stock/kline/get",
         ),
     )
     concept_histories = _load_histories(
@@ -460,14 +466,11 @@ def generate_live_dashboard(
         latest_date=today,
         status=status,
         policy=policy,
-        fetcher_factory=lambda board: lambda: _normalize_history(
-            ak.stock_board_concept_hist_em(
-                symbol=board.name,
-                start_date=start_date,
-                end_date=end_date,
-                period="daily",
-                adjust="",
-            )
+        fetcher_factory=lambda board: lambda: _fetch_eastmoney_board_history(
+            board,
+            start_date=start_date,
+            end_date=end_date,
+            endpoint="https://91.push2his.eastmoney.com/api/qt/stock/kline/get",
         ),
     )
 
@@ -644,6 +647,47 @@ def _normalize_history(frame: pd.DataFrame) -> pd.DataFrame:
     if "日期" not in frame.columns or "收盘" not in frame.columns:
         raise ValueError("历史行情缺少 日期 或 收盘 字段")
     return pd.DataFrame({"date": frame["日期"].map(str), "close": frame["收盘"]})
+
+
+def _fetch_eastmoney_board_history(
+    board: BoardInfo,
+    *,
+    start_date: str,
+    end_date: str,
+    endpoint: str,
+) -> pd.DataFrame:
+    import requests
+
+    response = requests.get(
+        endpoint,
+        params={
+            "secid": f"90.{board.code}",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+            "klt": "101",
+            "fqt": "0",
+            "beg": start_date,
+            "end": end_date,
+            "smplmt": "10000",
+            "lmt": "1000000",
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    klines = ((payload.get("data") or {}).get("klines") or [])
+    if not klines:
+        raise ValueError(f"{board.name}({board.code}) missing kline data")
+
+    rows = []
+    for item in klines:
+        fields = str(item).split(",")
+        if len(fields) < 3:
+            continue
+        rows.append({"date": fields[0], "close": fields[2]})
+    if not rows:
+        raise ValueError(f"{board.name}({board.code}) missing close data")
+    return pd.DataFrame(rows)
 
 
 def _latest_data_date(histories: dict[str, pd.DataFrame]) -> str:
