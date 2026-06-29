@@ -630,6 +630,7 @@ def generate_live_dashboard(
     board_limit: int = 0,
     stock_sector_limit: int = 0,
     stock_constituent_limit: int = 0,
+    board_list_timeout: float = 30.0,
 ) -> Path:
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
@@ -645,7 +646,7 @@ def generate_live_dashboard(
             cache=cache,
             category="industry",
             latest_date=today,
-            fetcher=lambda: ak.stock_board_industry_name_em(),
+            fetcher=lambda: _fetch_akshare_board_list("industry", timeout_seconds=board_list_timeout),
             policy=policy,
             status=status,
         ),
@@ -656,7 +657,7 @@ def generate_live_dashboard(
             cache=cache,
             category="concept",
             latest_date=today,
-            fetcher=lambda: ak.stock_board_concept_name_em(),
+            fetcher=lambda: _fetch_akshare_board_list("concept", timeout_seconds=board_list_timeout),
             policy=policy,
             status=status,
         ),
@@ -752,6 +753,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--board-limit", type=int, default=0, help="仅用于验证的每类板块数量限制；0 表示全量。")
     parser.add_argument("--stock-sector-limit", type=int, default=0, help="抓取个股明细的入榜板块数量限制；0 表示全量。")
     parser.add_argument("--stock-constituent-limit", type=int, default=0, help="每个板块抓取历史行情的成分股数量限制；0 表示全量。")
+    parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
     return parser.parse_args(argv)
 
 
@@ -772,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
             board_limit=args.board_limit,
             stock_sector_limit=args.stock_sector_limit,
             stock_constituent_limit=args.stock_constituent_limit,
+            board_list_timeout=args.board_list_timeout,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -949,11 +952,61 @@ def _load_board_infos_cached(
         return _load_board_infos(lambda: frame)
     except Exception:
         if cached is None:
+            boards_from_history = _board_infos_from_history_cache(cache, category)
+            if boards_from_history:
+                status.cache_hits += len(boards_from_history)
+                status.messages.append(f"using cached {category} history names as board list")
+                return boards_from_history
             raise
         frame, cached_date = cached
         status.cache_hits += 1
         status.messages.append(f"using cached board list for {category} from {cached_date}")
         return _load_board_infos(lambda: frame)
+
+
+def _board_infos_from_history_cache(cache: CacheStore, category: str) -> list[BoardInfo]:
+    return [BoardInfo(name=name, code="") for name in cache.list_history_names(category)]
+
+
+def _fetch_akshare_board_list(category: str, *, timeout_seconds: float) -> pd.DataFrame:
+    if timeout_seconds <= 0:
+        return _fetch_akshare_board_list_direct(category)
+
+    import multiprocessing as mp
+
+    queue: mp.Queue = mp.Queue(maxsize=1)
+    process = mp.Process(target=_akshare_board_list_worker, args=(category, queue), daemon=True)
+    process.start()
+    process.join(timeout_seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(5)
+        raise TimeoutError(f"{category} board list timed out after {timeout_seconds:.0f}s")
+
+    if queue.empty():
+        raise RuntimeError(f"{category} board list worker exited without data")
+
+    state, payload = queue.get()
+    if state == "ok":
+        return pd.DataFrame(payload)
+    raise RuntimeError(str(payload))
+
+
+def _akshare_board_list_worker(category: str, queue: Any) -> None:
+    try:
+        frame = _fetch_akshare_board_list_direct(category)
+        queue.put(("ok", frame.to_dict(orient="records")))
+    except BaseException as exc:
+        queue.put(("error", repr(exc)))
+
+
+def _fetch_akshare_board_list_direct(category: str) -> pd.DataFrame:
+    akshare_client = load_akshare()
+    if category == "industry":
+        return akshare_client.stock_board_industry_name_em()
+    if category == "concept":
+        return akshare_client.stock_board_concept_name_em()
+    raise ValueError(f"unknown board category: {category}")
 
 
 def _limit_boards(boards: list[BoardInfo], limit: int) -> list[BoardInfo]:

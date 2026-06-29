@@ -282,9 +282,16 @@ class SectorDashboardRenderTest(unittest.TestCase):
                 requested_codes.append(board.code)
                 return pd.DataFrame({"date": ["2026-06-24", "2026-06-25"], "close": [100, 110]})
 
+            def fake_fetch_board_list(category: str, **_: object) -> pd.DataFrame:
+                if category == "industry":
+                    return fake_akshare.stock_board_industry_name_em()
+                return fake_akshare.stock_board_concept_name_em()
+
             with patch("sector_dashboard.load_akshare", return_value=fake_akshare), patch(
                 "sector_dashboard._fetch_eastmoney_board_history", side_effect=fake_fetch_history
-            ), patch("sector_dashboard._load_sector_stock_histories", return_value={"industry": {}, "concept": {}}):
+            ), patch("sector_dashboard._fetch_akshare_board_list", side_effect=fake_fetch_board_list), patch(
+                "sector_dashboard._load_sector_stock_histories", return_value={"industry": {}, "concept": {}}
+            ):
                 generate_live_dashboard(
                     Path(temp_dir) / "index.html",
                     periods=[1],
@@ -431,6 +438,29 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(status.cache_hits, 1)
         self.assertEqual(status.failed_requests, 1)
         self.assertIn("cached board list", "; ".join(status.messages))
+
+    def test_load_board_infos_cached_uses_history_names_when_board_list_cache_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            cache.write_history(
+                "concept",
+                "CPO概念",
+                pd.DataFrame({"date": ["2026-06-29"], "close": [100]}),
+                data_date="2026-06-29",
+            )
+
+            infos = _load_board_infos_cached(
+                cache=cache,
+                category="concept",
+                latest_date="2026-06-29",
+                fetcher=lambda: (_ for _ in ()).throw(TimeoutError("concept board list timed out")),
+                policy=AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=()),
+                status=status,
+            )
+
+        self.assertEqual(infos, [BoardInfo("CPO概念", "")])
+        self.assertIn("cached concept history names", "; ".join(status.messages))
 
     def test_limit_boards_keeps_all_when_limit_is_zero(self):
         boards = [BoardInfo("A", "BK1"), BoardInfo("B", "BK2")]

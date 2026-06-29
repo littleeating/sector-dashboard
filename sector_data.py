@@ -79,6 +79,20 @@ class CacheStore:
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def list_history_names(self, category: str) -> list[str]:
+        directory = self.root / category
+        if not directory.exists():
+            return []
+        names: list[str] = []
+        for path in sorted(directory.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if payload.get("cache_version", "v1") == self.version:
+                names.append(path.stem)
+        return names
+
     def _history_path(self, category: str, name: str) -> Path:
         return self.root / category / f"{_safe_filename(name)}.json"
 
