@@ -13,6 +13,7 @@ from sector_dashboard import (
     _limit_boards,
     _load_sector_stock_histories,
     _load_board_infos,
+    _load_board_infos_cached,
     generate_live_dashboard,
     generate_sample_dashboard,
     render_dashboard,
@@ -409,6 +410,27 @@ class SectorDashboardRenderTest(unittest.TestCase):
 
         self.assertEqual(infos[0].name, "半导体")
         self.assertEqual(infos[0].code, "BK1036")
+
+    def test_load_board_infos_cached_falls_back_to_cached_list_when_fetch_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            cached = pd.DataFrame([{"板块名称": "半导体", "板块代码": "BK1036"}])
+            cache.write_history("board_list", "industry", cached, data_date="2026-06-26")
+
+            infos = _load_board_infos_cached(
+                cache=cache,
+                category="industry",
+                latest_date="2026-06-29",
+                fetcher=lambda: (_ for _ in ()).throw(ConnectionError("Remote end closed connection without response")),
+                policy=AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=()),
+                status=status,
+            )
+
+        self.assertEqual(infos, [BoardInfo("半导体", "BK1036")])
+        self.assertEqual(status.cache_hits, 1)
+        self.assertEqual(status.failed_requests, 1)
+        self.assertIn("cached board list", "; ".join(status.messages))
 
     def test_limit_boards_keeps_all_when_limit_is_zero(self):
         boards = [BoardInfo("A", "BK1"), BoardInfo("B", "BK2")]

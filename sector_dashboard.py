@@ -640,8 +640,28 @@ def generate_live_dashboard(
     start_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
     end_date = datetime.now().strftime("%Y%m%d")
 
-    industry_boards = _limit_boards(_load_board_infos(lambda: ak.stock_board_industry_name_em()), board_limit)
-    concept_boards = _limit_boards(_load_board_infos(lambda: ak.stock_board_concept_name_em()), board_limit)
+    industry_boards = _limit_boards(
+        _load_board_infos_cached(
+            cache=cache,
+            category="industry",
+            latest_date=today,
+            fetcher=lambda: ak.stock_board_industry_name_em(),
+            policy=policy,
+            status=status,
+        ),
+        board_limit,
+    )
+    concept_boards = _limit_boards(
+        _load_board_infos_cached(
+            cache=cache,
+            category="concept",
+            latest_date=today,
+            fetcher=lambda: ak.stock_board_concept_name_em(),
+            policy=policy,
+            status=status,
+        ),
+        board_limit,
+    )
 
     industry_histories = _load_histories(
         cache=cache,
@@ -910,6 +930,30 @@ def _load_board_infos(fetcher: Any) -> list[BoardInfo]:
         raise ValueError("板块清单缺少字段: " + ", ".join(sorted(missing)))
     cleaned = frame.loc[:, ["板块名称", "板块代码"]].dropna()
     return [BoardInfo(name=str(row["板块名称"]), code=str(row["板块代码"])) for _, row in cleaned.iterrows()]
+
+
+def _load_board_infos_cached(
+    *,
+    cache: CacheStore,
+    category: str,
+    latest_date: str,
+    fetcher: Any,
+    policy: AccessPolicy,
+    status: SourceStatus,
+) -> list[BoardInfo]:
+    cache_category = "board_list"
+    cached = cache.read_history(cache_category, category)
+    try:
+        frame = fetch_with_policy(fetcher, policy=policy, status=status)
+        cache.write_history(cache_category, category, frame, data_date=latest_date)
+        return _load_board_infos(lambda: frame)
+    except Exception:
+        if cached is None:
+            raise
+        frame, cached_date = cached
+        status.cache_hits += 1
+        status.messages.append(f"using cached board list for {category} from {cached_date}")
+        return _load_board_infos(lambda: frame)
 
 
 def _limit_boards(boards: list[BoardInfo], limit: int) -> list[BoardInfo]:
