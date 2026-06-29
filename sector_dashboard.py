@@ -153,10 +153,12 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
     legend_y = height - pad_bottom + 62
     for index, item in enumerate(series):
         color = colors[index % len(colors)]
+        series_id = f"series-{index}"
         points = " ".join(
             f"{x_for_date(point.date):.2f},{y_at(point.return_pct):.2f}"
             for point in item.points
         )
+        parts.append(f'<g class="series-group" data-series-id="{series_id}">')
         parts.append(f'<polyline class="trend" points="{points}" stroke="{color}" />')
         for point in item.points:
             x = x_for_date(point.date)
@@ -164,10 +166,17 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
             parts.append(
                 f'<circle class="daily-point" cx="{x:.2f}" cy="{y:.2f}" r="2.8" fill="{color}"><title>{html.escape(point.date)}: {point.return_pct:.2f}%</title></circle>'
             )
+        parts.append("</g>")
         legend_x = pad_left + (index % 5) * 176
         row_y = legend_y + (index // 5) * 20
-        parts.append(f'<line x1="{legend_x}" y1="{row_y}" x2="{legend_x + 20}" y2="{row_y}" stroke="{color}" stroke-width="2.5" />')
+        parts.append(
+            f'<g class="legend-item" data-series-id="{series_id}" role="button" tabindex="0" '
+            f'aria-label="高亮 {html.escape(item.name)}" onclick="selectLegendSeries(this)" '
+            f'onkeydown="handleLegendKey(event, this)">'
+        )
+        parts.append(f'<line class="legend-swatch" x1="{legend_x}" y1="{row_y}" x2="{legend_x + 20}" y2="{row_y}" stroke="{color}" stroke-width="2.5" />')
         parts.append(f'<text class="legend" x="{legend_x + 28}" y="{row_y + 4}">{html.escape(item.name)}</text>')
+        parts.append("</g>")
 
     parts.append("</svg>")
     return "\n".join(parts)
@@ -259,6 +268,9 @@ function showPeriodChart(key) {
     const isActive = panel.dataset.chartKey === key;
     panel.hidden = !isActive;
     panel.classList.toggle('active', isActive);
+    if (isActive) {
+      clearLegendSelection(panel);
+    }
     if (isActive && panel.dataset.chartTitle) {
       activeTitle = panel.dataset.chartTitle;
     }
@@ -269,6 +281,59 @@ function showPeriodChart(key) {
   const caption = document.getElementById('chart-caption');
   if (caption) {
     caption.textContent = activeTitle + '。再次点击其他周期可切换图表。';
+  }
+}
+
+function clearLegendSelection(scope) {
+  const root = scope || document;
+  const selectionRoots = [];
+  if (root.matches && (root.matches('.chart-panel') || root.matches('svg'))) {
+    selectionRoots.push(root);
+  }
+  root.querySelectorAll('.chart-panel, svg').forEach((node) => {
+    selectionRoots.push(node);
+  });
+  selectionRoots.forEach((node) => {
+    node.classList.remove('has-selection');
+    delete node.dataset.selectedSeries;
+  });
+  root.querySelectorAll('.series-group, .legend-item').forEach((node) => {
+    node.classList.remove('selected', 'dimmed');
+    if (node.classList.contains('legend-item')) {
+      node.setAttribute('aria-pressed', 'false');
+    }
+  });
+}
+
+function selectLegendSeries(legendItem) {
+  const panel = legendItem.closest('.chart-panel');
+  const svg = legendItem.closest('svg');
+  if (!panel || !svg) {
+    return;
+  }
+  const seriesId = legendItem.dataset.seriesId;
+  const isSelected = svg.dataset.selectedSeries === seriesId;
+  clearLegendSelection(panel);
+  if (isSelected) {
+    return;
+  }
+  svg.dataset.selectedSeries = seriesId;
+  svg.classList.add('has-selection');
+  panel.classList.add('has-selection');
+  panel.querySelectorAll('.series-group, .legend-item').forEach((node) => {
+    const selected = node.dataset.seriesId === seriesId;
+    node.classList.toggle('selected', selected);
+    node.classList.toggle('dimmed', !selected);
+    if (node.classList.contains('legend-item')) {
+      node.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    }
+  });
+}
+
+function handleLegendKey(event, legendItem) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectLegendSeries(legendItem);
   }
 }
 </script>
@@ -336,6 +401,15 @@ svg { width: 100%; height: auto; display: block; }
 .grid { stroke: #e8eaed; stroke-width: 1; }
 .trend { fill: none; stroke-width: 2.35; stroke-linejoin: round; stroke-linecap: round; opacity: .86; }
 .trend:hover { opacity: 1; stroke-width: 3; }
+.series-group, .legend-item { transition: opacity .16s ease, filter .16s ease; }
+.legend-item { cursor: pointer; outline: none; }
+.legend-item:focus-visible .legend { fill: #005a9e; font-weight: 700; text-decoration: underline; }
+.legend-item:focus-visible .legend-swatch { stroke-width: 4; }
+.chart-panel.has-selection .series-group.dimmed, .chart-panel.has-selection .legend-item.dimmed { opacity: .16; }
+.chart-panel.has-selection .series-group.selected .trend { opacity: 1; stroke-width: 4; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .20)); }
+.chart-panel.has-selection .series-group.selected .daily-point { opacity: 1; stroke-width: 1.6; }
+.chart-panel.has-selection .legend-item.selected .legend { fill: #202124; font-weight: 700; }
+.chart-panel.has-selection .legend-item.selected .legend-swatch { stroke-width: 4; }
 .axis-title { fill: #374151; font-size: 14px; font-weight: 700; }
 .tick, .date-label, .day-label { fill: #5f6368; font-size: 10px; }
 .legend { fill: #5f6368; font-size: 11.5px; }

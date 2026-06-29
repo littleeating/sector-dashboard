@@ -94,6 +94,10 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertIn('data-chart-key="industry-5"', html)
         self.assertIn('data-chart-key="concept-10"', html)
         self.assertIn("showPeriodChart", html)
+        self.assertIn("selectLegendSeries", html)
+        self.assertIn('class="series-group" data-series-id="series-0"', html)
+        self.assertIn('class="legend-item" data-series-id="series-0"', html)
+        self.assertIn("chart-panel.has-selection", html)
 
     def test_render_dashboard_escapes_sector_names(self):
         context = {
