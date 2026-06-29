@@ -21,6 +21,11 @@ SOURCE_LABELS = {
     "industry": "东方财富行业板块（AKShare）",
     "concept": "东方财富概念板块（AKShare）",
 }
+EASTMONEY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+    "Referer": "https://quote.eastmoney.com/",
+}
 
 
 @dataclass(frozen=True)
@@ -984,16 +989,7 @@ def _board_infos_from_history_cache(cache: CacheStore, category: str) -> list[Bo
 
 
 def _fetch_akshare_board_list(category: str, *, timeout_seconds: float) -> pd.DataFrame:
-    if timeout_seconds <= 0:
-        return _fetch_akshare_board_list_direct(category)
-
-    payload = _run_timed_worker(
-        f"{category} board list",
-        timeout_seconds,
-        _akshare_board_list_worker,
-        category,
-    )
-    return pd.DataFrame(payload)
+    return _fetch_eastmoney_board_list(category, timeout_seconds=timeout_seconds or 20)
 
 
 def _run_timed_worker(label: str, timeout_seconds: float, worker: Any, *args: Any) -> Any:
@@ -1026,12 +1022,44 @@ def _akshare_board_list_worker(category: str, queue: Any) -> None:
 
 
 def _fetch_akshare_board_list_direct(category: str) -> pd.DataFrame:
-    akshare_client = load_akshare()
+    return _fetch_eastmoney_board_list(category, timeout_seconds=20)
+
+
+def _fetch_eastmoney_board_list(category: str, *, timeout_seconds: float) -> pd.DataFrame:
     if category == "industry":
-        return akshare_client.stock_board_industry_name_em()
-    if category == "concept":
-        return akshare_client.stock_board_concept_name_em()
-    raise ValueError(f"unknown board category: {category}")
+        url = "https://17.push2.eastmoney.com/api/qt/clist/get"
+        fs = "m:90 t:2 f:!50"
+        fid = "f3"
+    elif category == "concept":
+        url = "https://79.push2.eastmoney.com/api/qt/clist/get"
+        fs = "m:90 t:3 f:!50"
+        fid = "f12"
+    else:
+        raise ValueError(f"unknown board category: {category}")
+
+    rows = _fetch_eastmoney_clist_rows(
+        url,
+        {
+            "pn": "1",
+            "pz": "5000",
+            "po": "1",
+            "np": "1",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": "2",
+            "invt": "2",
+            "fid": fid,
+            "fs": fs,
+            "fields": "f12,f14",
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    return pd.DataFrame(
+        [
+            {"板块名称": str(row.get("f14", "")), "板块代码": str(row.get("f12", ""))}
+            for row in rows
+            if row.get("f14") and row.get("f12")
+        ]
+    )
 
 
 def _limit_boards(boards: list[BoardInfo], limit: int) -> list[BoardInfo]:
@@ -1253,23 +1281,30 @@ def _fetch_eastmoney_board_constituents(
     akshare_client: Any,
     timeout_seconds: float = 30.0,
 ) -> list[StockInfo]:
-    if timeout_seconds > 0:
-        payload = _run_timed_worker(
-            f"{category} constituents {board.name}",
-            timeout_seconds,
-            _akshare_constituents_worker,
-            category,
-            board.name,
-        )
-        return _stock_infos_from_frame(pd.DataFrame(payload))
+    if not board.code:
+        raise ValueError(f"{board.name} missing board code for constituents")
 
-    if category == "industry":
-        frame = akshare_client.stock_board_industry_cons_em(symbol=board.name)
-    elif category == "concept":
-        frame = akshare_client.stock_board_concept_cons_em(symbol=board.name)
-    else:
-        raise ValueError(f"unknown board category: {category}")
-    return _stock_infos_from_frame(frame)
+    rows = _fetch_eastmoney_clist_rows(
+        "https://29.push2.eastmoney.com/api/qt/clist/get",
+        {
+            "pn": "1",
+            "pz": "5000",
+            "po": "1",
+            "np": "1",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": "2",
+            "invt": "2",
+            "fid": "f3" if category == "industry" else "f12",
+            "fs": f"b:{board.code} f:!50",
+            "fields": "f12,f14",
+        },
+        timeout_seconds=timeout_seconds or 20,
+    )
+    return [
+        StockInfo(name=str(row.get("f14", "")), code=_normalize_stock_code(str(row.get("f12", ""))))
+        for row in rows
+        if row.get("f14") and row.get("f12")
+    ]
 
 
 def _fetch_eastmoney_stock_history(
@@ -1280,25 +1315,35 @@ def _fetch_eastmoney_stock_history(
     akshare_client: Any,
     timeout_seconds: float = 30.0,
 ) -> pd.DataFrame:
-    if timeout_seconds > 0:
-        payload = _run_timed_worker(
-            f"stock history {stock.code} {stock.name}",
-            timeout_seconds,
-            _akshare_stock_history_worker,
-            _normalize_stock_code(stock.code),
-            start_date,
-            end_date,
-        )
-        return _normalize_history(pd.DataFrame(payload))
+    import requests
 
-    frame = akshare_client.stock_zh_a_hist(
-        symbol=_normalize_stock_code(stock.code),
-        period="daily",
-        start_date=start_date,
-        end_date=end_date,
-        adjust="",
+    response = requests.get(
+        "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+        params={
+            "secid": _stock_secid(stock.code),
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+            "klt": "101",
+            "fqt": "0",
+            "beg": start_date,
+            "end": end_date,
+            "smplmt": "10000",
+            "lmt": "1000000",
+        },
+        headers=EASTMONEY_HEADERS,
+        timeout=timeout_seconds or 20,
     )
-    return _normalize_history(frame)
+    response.raise_for_status()
+    payload = response.json()
+    klines = ((payload.get("data") or {}).get("klines") or [])
+    rows = []
+    for item in klines:
+        fields = str(item).split(",")
+        if len(fields) >= 3:
+            rows.append({"日期": fields[0], "收盘": fields[2]})
+    if not rows:
+        raise ValueError(f"{stock.name}({stock.code}) missing kline data")
+    return _normalize_history(pd.DataFrame(rows))
 
 
 def _akshare_constituents_worker(category: str, board_name: str, queue: Any) -> None:
@@ -1330,6 +1375,20 @@ def _akshare_stock_history_worker(code: str, start_date: str, end_date: str, que
         queue.put(("error", repr(exc)))
 
 
+def _fetch_eastmoney_clist_rows(url: str, params: dict[str, str], *, timeout_seconds: float) -> list[dict[str, Any]]:
+    import requests
+
+    response = requests.get(url, params=params, headers=EASTMONEY_HEADERS, timeout=timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+    rows = ((payload.get("data") or {}).get("diff") or [])
+    if isinstance(rows, dict):
+        rows = list(rows.values())
+    if not isinstance(rows, list):
+        raise ValueError("eastmoney clist returned unexpected rows")
+    return [row for row in rows if isinstance(row, dict)]
+
+
 def _stock_infos_from_frame(frame: pd.DataFrame) -> list[StockInfo]:
     name_column = _first_existing_column(frame, ["名称", "股票名称", "name"])
     code_column = _first_existing_column(frame, ["代码", "股票代码", "code"])
@@ -1352,6 +1411,15 @@ def _first_existing_column(frame: pd.DataFrame, candidates: list[str]) -> str | 
 def _normalize_stock_code(code: str) -> str:
     digits = "".join(ch for ch in str(code) if ch.isdigit())
     return digits or str(code).strip()
+
+
+def _stock_secid(code: str) -> str:
+    normalized = _normalize_stock_code(code)
+    if normalized.startswith(("5", "6", "9")):
+        market = "1"
+    else:
+        market = "0"
+    return f"{market}.{normalized}"
 
 
 def _stock_cache_name(stock: StockInfo) -> str:
@@ -1386,6 +1454,7 @@ def _fetch_eastmoney_board_history(
             "smplmt": "10000",
             "lmt": "1000000",
         },
+        headers=EASTMONEY_HEADERS,
         timeout=20,
     )
     response.raise_for_status()
