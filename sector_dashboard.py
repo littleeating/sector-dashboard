@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from sector_data import AccessPolicy, CacheStore, SourceStatus, get_or_fetch_history, load_akshare
+from sector_data import AccessPolicy, CacheStore, SourceStatus, fetch_with_policy, get_or_fetch_history, load_akshare
 from sector_momentum import RankingRow, TrendPoint, TrendSeries, build_trend_series, rank_sectors
 
 
@@ -28,11 +28,19 @@ class BoardInfo:
     code: str
 
 
+@dataclass(frozen=True)
+class StockInfo:
+    name: str
+    code: str
+
+
 def render_dashboard(context: dict[str, Any]) -> str:
     periods = [int(period) for period in context["periods"]]
     industry_rankings = context["industry_rankings"]
     concept_rankings = context["concept_rankings"]
     period_chart_series = context.get("period_chart_series", {"industry": {}, "concept": {}})
+    sector_stock_rankings = context.get("sector_stock_rankings", {"industry": {}, "concept": {}})
+    sector_stock_chart_series = context.get("sector_stock_chart_series", {"industry": {}, "concept": {}})
     source_labels = context.get("source_labels", SOURCE_LABELS)
     source_statuses = context.get("source_statuses", [])
     quality = context.get("quality", {})
@@ -55,10 +63,10 @@ def render_dashboard(context: dict[str, Any]) -> str:
             "<h2>趋势对比</h2>",
             '<p id="chart-caption">默认显示各周期榜首去重后的重点板块。点击下方任一周期排名，可切换为该周期全部入榜板块曲线。</p>',
             "</div>",
-            _render_chart_panels(context.get("trend_series", []), period_chart_series),
+            _render_chart_panels(context.get("trend_series", []), period_chart_series, sector_stock_chart_series),
             "</section>",
-            _render_rankings("行业板块", "industry", source_labels.get("industry", ""), industry_rankings, periods),
-            _render_rankings("概念板块", "concept", source_labels.get("concept", ""), concept_rankings, periods),
+            _render_rankings("行业板块", "industry", source_labels.get("industry", ""), industry_rankings, periods, sector_stock_rankings),
+            _render_rankings("概念板块", "concept", source_labels.get("concept", ""), concept_rankings, periods, sector_stock_rankings),
             _render_statuses(source_statuses, quality),
             "</main>",
             _interaction_script(),
@@ -185,6 +193,7 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
 def _render_chart_panels(
     overview_series: list[TrendSeries],
     period_chart_series: dict[str, dict[int, list[TrendSeries]]],
+    sector_stock_chart_series: dict[str, dict[int, dict[str, list[TrendSeries]]]] | None = None,
 ) -> str:
     panels = [
         f'<div class="chart-panel active" data-chart-key="overview" data-chart-title="重点板块趋势对比">{build_svg_chart(overview_series)}</div>'
@@ -196,6 +205,16 @@ def _render_chart_panels(
             panels.append(
                 f'<div class="chart-panel" data-chart-key="{category}-{period}" data-chart-title="{html.escape(title)}" hidden>{build_svg_chart(series)}</div>'
             )
+    for category, periods in (sector_stock_chart_series or {}).items():
+        label = labels.get(category, category)
+        for period, boards in sorted(periods.items()):
+            for board_name, series in boards.items():
+                key = _stock_chart_key(category, period, board_name)
+                title = f"{label} {board_name} {period}日股票涨幅趋势"
+                panels.append(
+                    f'<div class="chart-panel stock-chart-panel" data-chart-key="{html.escape(key, quote=True)}" '
+                    f'data-chart-title="{html.escape(title, quote=True)}" hidden>{build_svg_chart(series)}</div>'
+                )
     return "\n".join(panels)
 
 
@@ -222,15 +241,30 @@ def _render_rankings(
     source_label: str,
     rankings: dict[int, list[RankingRow]],
     periods: list[int],
+    sector_stock_rankings: dict[str, dict[int, dict[str, list[RankingRow]]]] | None = None,
 ) -> str:
     cards = []
     for period in periods:
         rows = rankings.get(period, [])
         if rows:
-            body = "\n".join(
-                f"<tr><td>{rank}</td><td>{html.escape(row.name)}</td><td>{row.return_pct:.2f}%</td><td>{row.latest_close:.2f}</td></tr>"
-                for rank, row in enumerate(rows, start=1)
-            )
+            rendered_rows = []
+            for rank, row in enumerate(rows, start=1):
+                stock_rows = (
+                    sector_stock_rankings
+                    or {}
+                ).get(category, {}).get(period, {}).get(row.name, [])
+                panel_key = _stock_panel_key(category, period, row.name)
+                chart_key = _stock_chart_key(category, period, row.name)
+                rendered_rows.append(
+                    f'<tr class="sector-row" role="button" tabindex="0" '
+                    f'data-stock-panel-key="{html.escape(panel_key, quote=True)}" '
+                    f'data-stock-chart-key="{html.escape(chart_key, quote=True)}" '
+                    f'aria-expanded="false" onclick="showSectorStocks(this)" '
+                    f'onkeydown="handleSectorRowKey(event, this)">'
+                    f"<td>{rank}</td><td>{html.escape(row.name)}</td><td>{row.return_pct:.2f}%</td><td>{row.latest_close:.2f}</td></tr>"
+                )
+                rendered_rows.append(_render_stock_detail_row(panel_key, stock_rows))
+            body = "\n".join(rendered_rows)
         else:
             body = '<tr><td colspan="4" class="empty">暂无足够历史数据</td></tr>'
         cards.append(
@@ -258,6 +292,41 @@ def _render_rankings(
 """
 
 
+def _render_stock_detail_row(panel_key: str, stock_rows: list[RankingRow]) -> str:
+    chart_key = "stock-" + panel_key
+    if stock_rows:
+        rows = "\n".join(
+            f"<tr><td>{rank}</td><td>{html.escape(row.name)}</td><td>{row.return_pct:.2f}%</td><td>{row.latest_close:.2f}</td></tr>"
+            for rank, row in enumerate(stock_rows, start=1)
+        )
+    else:
+        rows = '<tr><td colspan="4" class="empty">暂无可用个股数据</td></tr>'
+    return f"""
+<tr class="stock-detail" data-stock-panel-key="{html.escape(panel_key, quote=True)}" hidden>
+  <td colspan="4">
+    <div class="stock-detail-body">
+      <div class="stock-detail-heading">
+        <strong>板块内涨幅前20名股票</strong>
+        <button class="stock-chart-button" type="button" data-stock-chart-key="{html.escape(chart_key, quote=True)}" onclick="showStockChart(this.dataset.stockChartKey)">查看股票趋势图</button>
+      </div>
+      <table class="stock-table">
+        <thead><tr><th>名次</th><th>股票</th><th>累计涨幅</th><th>收盘</th></tr></thead>
+        <tbody>{rows}</tbody>
+      </table>
+    </div>
+  </td>
+</tr>
+"""
+
+
+def _stock_panel_key(category: str, period: int, board_name: str) -> str:
+    return f"{category}-{period}-{board_name}"
+
+
+def _stock_chart_key(category: str, period: int, board_name: str) -> str:
+    return "stock-" + _stock_panel_key(category, period, board_name)
+
+
 def _interaction_script() -> str:
     return """
 <script>
@@ -281,6 +350,43 @@ function showPeriodChart(key) {
   const caption = document.getElementById('chart-caption');
   if (caption) {
     caption.textContent = activeTitle + '。再次点击其他周期可切换图表。';
+  }
+}
+
+function findStockDetail(key) {
+  return Array.from(document.querySelectorAll('.stock-detail')).find((node) => node.dataset.stockPanelKey === key);
+}
+
+function showSectorStocks(row) {
+  const key = row.dataset.stockPanelKey;
+  const detail = findStockDetail(key);
+  if (!detail) {
+    return;
+  }
+  const willOpen = detail.hidden;
+  document.querySelectorAll('.stock-detail').forEach((node) => {
+    node.hidden = true;
+  });
+  document.querySelectorAll('.sector-row').forEach((node) => {
+    node.classList.remove('expanded');
+    node.setAttribute('aria-expanded', 'false');
+  });
+  detail.hidden = !willOpen;
+  row.classList.toggle('expanded', willOpen);
+  row.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  if (willOpen && row.dataset.stockChartKey) {
+    showStockChart(row.dataset.stockChartKey);
+  }
+}
+
+function showStockChart(key) {
+  showPeriodChart(key);
+}
+
+function handleSectorRowKey(event, row) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    showSectorStocks(row);
   }
 }
 
@@ -391,6 +497,16 @@ dd { margin: 4px 0 0; font-weight: 700; }
 .ranking-card { padding: 14px; min-width: 0; }
 .period-button { width: 100%; margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: #f8fafc; color: var(--text); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
 .period-button:hover, .period-button.selected { border-color: #0078d4; color: #005a9e; background: #eef6ff; }
+.sector-row { cursor: pointer; }
+.sector-row:hover, .sector-row.expanded { background: #f8fbff; }
+.sector-row:focus-visible { outline: 2px solid #0078d4; outline-offset: -2px; }
+.stock-detail[hidden] { display: none; }
+.stock-detail td { padding: 0; background: #fbfcfe; }
+.stock-detail-body { padding: 10px 8px 12px; border-top: 1px solid #dfe8f5; }
+.stock-detail-heading { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 8px; color: var(--text); }
+.stock-chart-button { border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #005a9e; cursor: pointer; font: inherit; font-size: 12px; padding: 5px 8px; white-space: nowrap; }
+.stock-chart-button:hover { border-color: #0078d4; background: #eef6ff; }
+.stock-table { font-size: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 8px 6px; border-bottom: 1px solid #eceff3; text-align: right; white-space: nowrap; }
 th:nth-child(2), td:nth-child(2), .status-section td:last-child { text-align: left; }
@@ -423,13 +539,19 @@ svg { width: 100%; height: auto; display: block; }
 
 def generate_sample_dashboard(output: str | Path) -> Path:
     output_path = Path(output)
+    industry_names = _sample_industry_names()
+    concept_names = _sample_concept_names()
     context = _build_context(
-        industry_histories=_sample_histories(_sample_industry_names(), base=1000),
-        concept_histories=_sample_histories(_sample_concept_names(), base=900),
+        industry_histories=_sample_histories(industry_names, base=1000),
+        concept_histories=_sample_histories(concept_names, base=900),
         periods=DEFAULT_PERIODS,
         top_n=DEFAULT_TOP_N,
         source_statuses=[SourceStatus(source="sample", requests=0, cache_hits=0)],
         quality={"mode": "sample"},
+        sector_stock_histories={
+            "industry": _sample_sector_stock_histories(industry_names, base=20),
+            "concept": _sample_sector_stock_histories(concept_names, base=16),
+        },
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_dashboard(context), encoding="utf-8")
@@ -506,6 +628,8 @@ def generate_live_dashboard(
     min_delay: float,
     max_delay: float,
     board_limit: int = 0,
+    stock_sector_limit: int = 0,
+    stock_constituent_limit: int = 0,
 ) -> Path:
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
@@ -548,13 +672,46 @@ def generate_live_dashboard(
         ),
     )
 
-    context = _build_context(
+    base_context = _build_context(
         industry_histories=industry_histories,
         concept_histories=concept_histories,
         periods=periods,
         top_n=top_n,
         source_statuses=[status],
         quality={"max_workers": policy.max_workers},
+    )
+    sector_stock_histories = _load_sector_stock_histories(
+        cache=cache,
+        akshare_client=ak,
+        periods=periods,
+        rankings_by_category={
+            "industry": base_context["industry_rankings"],
+            "concept": base_context["concept_rankings"],
+        },
+        boards_by_category={
+            "industry": {board.name: board for board in industry_boards},
+            "concept": {board.name: board for board in concept_boards},
+        },
+        latest_date=today,
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+        policy=policy,
+        stock_sector_limit=stock_sector_limit,
+        stock_constituent_limit=stock_constituent_limit,
+    )
+    context = _build_context(
+        industry_histories=industry_histories,
+        concept_histories=concept_histories,
+        periods=periods,
+        top_n=top_n,
+        source_statuses=[status],
+        quality={
+            "max_workers": policy.max_workers,
+            "stock_sector_limit": stock_sector_limit,
+            "stock_constituent_limit": stock_constituent_limit,
+        },
+        sector_stock_histories=sector_stock_histories,
     )
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -573,6 +730,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-delay", type=float, default=1.2, help="外部请求之间的最小随机延迟秒数。")
     parser.add_argument("--max-delay", type=float, default=2.5, help="外部请求之间的最大随机延迟秒数。")
     parser.add_argument("--board-limit", type=int, default=0, help="仅用于验证的每类板块数量限制；0 表示全量。")
+    parser.add_argument("--stock-sector-limit", type=int, default=0, help="抓取个股明细的入榜板块数量限制；0 表示全量。")
+    parser.add_argument("--stock-constituent-limit", type=int, default=0, help="每个板块抓取历史行情的成分股数量限制；0 表示全量。")
     return parser.parse_args(argv)
 
 
@@ -591,6 +750,8 @@ def main(argv: list[str] | None = None) -> int:
             min_delay=args.min_delay,
             max_delay=args.max_delay,
             board_limit=args.board_limit,
+            stock_sector_limit=args.stock_sector_limit,
+            stock_constituent_limit=args.stock_constituent_limit,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -604,6 +765,7 @@ def _build_context(
     top_n: int,
     source_statuses: list[SourceStatus],
     quality: dict[str, Any],
+    sector_stock_histories: dict[str, dict[str, dict[str, pd.DataFrame]]] | None = None,
 ) -> dict[str, Any]:
     industry_rankings, industry_quality = rank_sectors(industry_histories, periods, top_n)
     concept_rankings, concept_quality = rank_sectors(concept_histories, periods, top_n)
@@ -614,11 +776,18 @@ def _build_context(
         "industry": _build_period_chart_series(industry_histories, industry_rankings),
         "concept": _build_period_chart_series(concept_histories, concept_rankings),
     }
+    sector_stock_rankings, sector_stock_chart_series, stock_quality = _build_sector_stock_context(
+        sector_stock_histories or {"industry": {}, "concept": {}},
+        {"industry": industry_rankings, "concept": concept_rankings},
+        periods,
+        top_n,
+    )
     data_date = _latest_data_date(all_histories)
     merged_quality = {
         **quality,
         "industry_history_short": industry_quality["history_short"],
         "concept_history_short": concept_quality["history_short"],
+        **stock_quality,
     }
     return {
         "data_date": data_date,
@@ -630,6 +799,8 @@ def _build_context(
         "concept_count": len(concept_histories),
         "trend_series": trend_series,
         "period_chart_series": period_chart_series,
+        "sector_stock_rankings": sector_stock_rankings,
+        "sector_stock_chart_series": sector_stock_chart_series,
         "source_statuses": source_statuses,
         "source_labels": SOURCE_LABELS,
         "quality": merged_quality,
@@ -645,6 +816,52 @@ def _build_period_chart_series(
         names = [row.name for row in rows]
         output[period] = build_trend_series(histories, names, lookback=period + 1)
     return output
+
+
+def _build_sector_stock_context(
+    sector_stock_histories: dict[str, dict[str, dict[str, pd.DataFrame]]],
+    rankings_by_category: dict[str, dict[int, list[RankingRow]]],
+    periods: list[int],
+    top_n: int,
+) -> tuple[
+    dict[str, dict[int, dict[str, list[RankingRow]]]],
+    dict[str, dict[int, dict[str, list[TrendSeries]]]],
+    dict[str, int | bool],
+]:
+    stock_rankings: dict[str, dict[int, dict[str, list[RankingRow]]]] = {"industry": {}, "concept": {}}
+    stock_chart_series: dict[str, dict[int, dict[str, list[TrendSeries]]]] = {"industry": {}, "concept": {}}
+    stock_history_short = 0
+    stock_sector_count = 0
+
+    for category, rankings in rankings_by_category.items():
+        stock_rankings.setdefault(category, {})
+        stock_chart_series.setdefault(category, {})
+        histories_by_board = sector_stock_histories.get(category, {})
+        for period in periods:
+            stock_rankings[category].setdefault(period, {})
+            stock_chart_series[category].setdefault(period, {})
+            for sector_row in rankings.get(period, []):
+                stock_histories = histories_by_board.get(sector_row.name, {})
+                if not stock_histories:
+                    stock_rankings[category][period][sector_row.name] = []
+                    stock_chart_series[category][period][sector_row.name] = []
+                    continue
+                ranked, quality = rank_sectors(stock_histories, [period], top_n)
+                rows = ranked.get(period, [])
+                stock_rankings[category][period][sector_row.name] = rows
+                stock_chart_series[category][period][sector_row.name] = build_trend_series(
+                    stock_histories,
+                    [row.name for row in rows],
+                    lookback=period + 1,
+                )
+                stock_history_short += quality["history_short"]
+                stock_sector_count += 1
+
+    return stock_rankings, stock_chart_series, {
+        "stock_rankings_enabled": bool(stock_sector_count),
+        "stock_sector_count": stock_sector_count,
+        "stock_history_short": stock_history_short,
+    }
 
 
 def _selected_trend_names(
@@ -668,6 +885,21 @@ def _sample_histories(names: list[str], base: float) -> dict[str, pd.DataFrame]:
         prices = [round(base * (1 + drift * day + wave[day]), 2) for day in range(70)]
         histories[name] = pd.DataFrame({"date": dates, "close": prices})
     return histories
+
+
+def _sample_sector_stock_histories(board_names: list[str], base: float) -> dict[str, dict[str, pd.DataFrame]]:
+    output: dict[str, dict[str, pd.DataFrame]] = {}
+    dates = pd.bdate_range(end=pd.Timestamp("2026-06-26"), periods=70).strftime("%Y-%m-%d")
+    for board_index, board_name in enumerate(board_names):
+        stocks: dict[str, pd.DataFrame] = {}
+        for stock_index in range(20):
+            drift = 0.002 + board_index * 0.0004 + stock_index * 0.0008
+            wave = [((day + stock_index) % 7 - 3) * 0.0015 for day in range(70)]
+            start = base + stock_index * 0.6 + board_index * 0.05
+            prices = [round(start * (1 + drift * day + wave[day]), 2) for day in range(70)]
+            stocks[f"{board_name}股{stock_index + 1:02d}"] = pd.DataFrame({"date": dates, "close": prices})
+        output[board_name] = stocks
+    return output
 
 
 def _load_board_infos(fetcher: Any) -> list[BoardInfo]:
@@ -715,6 +947,185 @@ def _load_histories(
         except Exception as exc:
             status.messages.append(f"{board.name}: {exc}")
     return histories
+
+
+def _load_sector_stock_histories(
+    *,
+    cache: CacheStore,
+    akshare_client: Any,
+    periods: list[int],
+    rankings_by_category: dict[str, dict[int, list[RankingRow]]],
+    boards_by_category: dict[str, dict[str, BoardInfo]],
+    latest_date: str,
+    start_date: str,
+    end_date: str,
+    status: SourceStatus,
+    policy: AccessPolicy,
+    stock_sector_limit: int,
+    stock_constituent_limit: int,
+) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
+    if stock_sector_limit < 0:
+        raise ValueError("stock_sector_limit must not be negative")
+    if stock_constituent_limit < 0:
+        raise ValueError("stock_constituent_limit must not be negative")
+
+    output: dict[str, dict[str, dict[str, pd.DataFrame]]] = {"industry": {}, "concept": {}}
+    selected = _selected_ranked_boards(rankings_by_category, boards_by_category, periods)
+    if stock_sector_limit:
+        selected = selected[:stock_sector_limit]
+
+    for category, board in selected:
+        if status.limited:
+            break
+        try:
+            constituents = _get_or_fetch_constituents(
+                cache=cache,
+                category=category,
+                board=board,
+                latest_date=latest_date,
+                status=status,
+                policy=policy,
+                fetcher=lambda category=category, board=board: _fetch_eastmoney_board_constituents(
+                    board,
+                    category=category,
+                    akshare_client=akshare_client,
+                ),
+            )
+        except Exception as exc:
+            status.messages.append(f"{board.name} constituents: {exc}")
+            continue
+
+        if stock_constituent_limit:
+            constituents = constituents[:stock_constituent_limit]
+        output.setdefault(category, {}).setdefault(board.name, {})
+        for stock in constituents:
+            if status.limited:
+                break
+            try:
+                output[category][board.name][stock.name] = get_or_fetch_history(
+                    cache=cache,
+                    category=f"stock_history/{category}/{board.name}",
+                    name=_stock_cache_name(stock),
+                    latest_date=latest_date,
+                    fetcher=lambda stock=stock: _fetch_eastmoney_stock_history(
+                        stock,
+                        start_date=start_date,
+                        end_date=end_date,
+                        akshare_client=akshare_client,
+                    ),
+                    policy=policy,
+                    status=status,
+                )
+            except Exception as exc:
+                status.messages.append(f"{board.name}/{stock.name}: {exc}")
+    return output
+
+
+def _selected_ranked_boards(
+    rankings_by_category: dict[str, dict[int, list[RankingRow]]],
+    boards_by_category: dict[str, dict[str, BoardInfo]],
+    periods: list[int],
+) -> list[tuple[str, BoardInfo]]:
+    selected: list[tuple[str, BoardInfo]] = []
+    seen: set[tuple[str, str]] = set()
+    for category in ("industry", "concept"):
+        boards = boards_by_category.get(category, {})
+        rankings = rankings_by_category.get(category, {})
+        for period in periods:
+            for row in rankings.get(period, []):
+                key = (category, row.name)
+                if key in seen or row.name not in boards:
+                    continue
+                seen.add(key)
+                selected.append((category, boards[row.name]))
+    return selected
+
+
+def _get_or_fetch_constituents(
+    *,
+    cache: CacheStore,
+    category: str,
+    board: BoardInfo,
+    latest_date: str,
+    status: SourceStatus,
+    policy: AccessPolicy,
+    fetcher: Any,
+) -> list[StockInfo]:
+    cache_category = f"constituents/{category}"
+    cached = cache.read_history(cache_category, board.name)
+    if cached is not None:
+        frame, cached_date = cached
+        if cached_date == latest_date:
+            status.cache_hits += 1
+            return _stock_infos_from_frame(frame)
+
+    frame = fetch_with_policy(
+        lambda: pd.DataFrame([stock.__dict__ for stock in fetcher()]),
+        policy=policy,
+        status=status,
+    )
+    cache.write_history(cache_category, board.name, frame, data_date=latest_date)
+    return _stock_infos_from_frame(frame)
+
+
+def _fetch_eastmoney_board_constituents(
+    board: BoardInfo,
+    *,
+    category: str,
+    akshare_client: Any,
+) -> list[StockInfo]:
+    if category == "industry":
+        frame = akshare_client.stock_board_industry_cons_em(symbol=board.name)
+    elif category == "concept":
+        frame = akshare_client.stock_board_concept_cons_em(symbol=board.name)
+    else:
+        raise ValueError(f"unknown board category: {category}")
+    return _stock_infos_from_frame(frame)
+
+
+def _fetch_eastmoney_stock_history(
+    stock: StockInfo,
+    *,
+    start_date: str,
+    end_date: str,
+    akshare_client: Any,
+) -> pd.DataFrame:
+    frame = akshare_client.stock_zh_a_hist(
+        symbol=_normalize_stock_code(stock.code),
+        period="daily",
+        start_date=start_date,
+        end_date=end_date,
+        adjust="",
+    )
+    return _normalize_history(frame)
+
+
+def _stock_infos_from_frame(frame: pd.DataFrame) -> list[StockInfo]:
+    name_column = _first_existing_column(frame, ["名称", "股票名称", "name"])
+    code_column = _first_existing_column(frame, ["代码", "股票代码", "code"])
+    if not name_column or not code_column:
+        raise ValueError("成分股列表缺少 名称 或 代码 字段")
+    cleaned = frame.loc[:, [name_column, code_column]].dropna()
+    return [
+        StockInfo(name=str(row[name_column]), code=_normalize_stock_code(str(row[code_column])))
+        for _, row in cleaned.iterrows()
+    ]
+
+
+def _first_existing_column(frame: pd.DataFrame, candidates: list[str]) -> str | None:
+    for column in candidates:
+        if column in frame.columns:
+            return column
+    return None
+
+
+def _normalize_stock_code(code: str) -> str:
+    digits = "".join(ch for ch in str(code) if ch.isdigit())
+    return digits or str(code).strip()
+
+
+def _stock_cache_name(stock: StockInfo) -> str:
+    return f"{stock.code}_{stock.name}"
 
 
 def _normalize_history(frame: pd.DataFrame) -> pd.DataFrame:

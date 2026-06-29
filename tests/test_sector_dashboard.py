@@ -8,14 +8,16 @@ import pandas as pd
 from sector_dashboard import (
     DEFAULT_TOP_N,
     BoardInfo,
+    StockInfo,
     _build_context,
     _limit_boards,
+    _load_sector_stock_histories,
     _load_board_infos,
     generate_live_dashboard,
     generate_sample_dashboard,
     render_dashboard,
 )
-from sector_data import SourceStatus
+from sector_data import AccessPolicy, CacheStore, SourceStatus
 from sector_momentum import RankingRow, TrendPoint, TrendSeries
 
 
@@ -71,6 +73,32 @@ class SectorDashboardRenderTest(unittest.TestCase):
                     ]
                 },
             },
+            "sector_stock_rankings": {
+                "industry": {
+                    5: {
+                        "半导体": [
+                            RankingRow("测试股份", 18.5, "2026-06-26", 12.3),
+                        ]
+                    }
+                },
+                "concept": {},
+            },
+            "sector_stock_chart_series": {
+                "industry": {
+                    5: {
+                        "半导体": [
+                            TrendSeries(
+                                name="测试股份",
+                                points=[
+                                    TrendPoint("2026-06-25", 0.0),
+                                    TrendPoint("2026-06-26", 18.5),
+                                ],
+                            )
+                        ]
+                    }
+                },
+                "concept": {},
+            },
             "source_statuses": [SourceStatus(source="eastmoney", requests=1, cache_hits=2)],
             "source_labels": {
                 "industry": "东方财富行业板块（AKShare）",
@@ -98,6 +126,14 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertIn('class="series-group" data-series-id="series-0"', html)
         self.assertIn('class="legend-item" data-series-id="series-0"', html)
         self.assertIn("chart-panel.has-selection", html)
+        self.assertIn('class="sector-row"', html)
+        self.assertIn('data-stock-panel-key="industry-5-半导体"', html)
+        self.assertIn('class="stock-detail"', html)
+        self.assertIn("板块内涨幅前20名股票", html)
+        self.assertIn("测试股份", html)
+        self.assertIn("showSectorStocks", html)
+        self.assertIn("showStockChart", html)
+        self.assertIn('data-chart-key="stock-industry-5-半导体"', html)
 
     def test_render_dashboard_escapes_sector_names(self):
         context = {
@@ -247,7 +283,7 @@ class SectorDashboardRenderTest(unittest.TestCase):
 
             with patch("sector_dashboard.load_akshare", return_value=fake_akshare), patch(
                 "sector_dashboard._fetch_eastmoney_board_history", side_effect=fake_fetch_history
-            ):
+            ), patch("sector_dashboard._load_sector_stock_histories", return_value={"industry": {}, "concept": {}}):
                 generate_live_dashboard(
                     Path(temp_dir) / "index.html",
                     periods=[1],
@@ -263,6 +299,78 @@ class SectorDashboardRenderTest(unittest.TestCase):
 
     def test_default_top_n_is_twenty(self):
         self.assertEqual(DEFAULT_TOP_N, 20)
+
+    def test_build_context_adds_sector_stock_rankings_and_charts(self):
+        dates = pd.bdate_range(end=pd.Timestamp("2026-06-26"), periods=6).strftime("%Y-%m-%d")
+        sector_histories = {
+            "SectorA": pd.DataFrame({"date": dates, "close": [100, 101, 102, 103, 104, 110]})
+        }
+        stock_histories = {
+            "industry": {
+                "SectorA": {
+                    "FastStock": pd.DataFrame({"date": dates, "close": [10, 10, 11, 12, 13, 16]}),
+                    "SlowStock": pd.DataFrame({"date": dates, "close": [10, 10, 10, 10, 10, 11]}),
+                }
+            },
+            "concept": {},
+        }
+
+        context = _build_context(
+            industry_histories=sector_histories,
+            concept_histories={},
+            periods=[2],
+            top_n=2,
+            source_statuses=[],
+            quality={},
+            sector_stock_histories=stock_histories,
+        )
+
+        stock_rows = context["sector_stock_rankings"]["industry"][2]["SectorA"]
+        self.assertEqual([row.name for row in stock_rows], ["FastStock", "SlowStock"])
+        self.assertEqual(len(context["sector_stock_chart_series"]["industry"][2]["SectorA"]), 2)
+        self.assertTrue(context["quality"]["stock_rankings_enabled"])
+        self.assertEqual(context["quality"]["stock_sector_count"], 1)
+
+    def test_load_sector_stock_histories_fetches_ranked_boards_and_stock_histories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            policy = AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=())
+            requested_boards: list[str] = []
+            requested_stocks: list[str] = []
+
+            def fake_constituents(board: BoardInfo, **_: object) -> list[StockInfo]:
+                requested_boards.append(board.name)
+                return [StockInfo("FastStock", "600000")]
+
+            def fake_stock_history(stock: StockInfo, **_: object) -> pd.DataFrame:
+                requested_stocks.append(stock.code)
+                return pd.DataFrame({"date": ["2026-06-25", "2026-06-26"], "close": [10, 12]})
+
+            with patch("sector_dashboard._fetch_eastmoney_board_constituents", side_effect=fake_constituents), patch(
+                "sector_dashboard._fetch_eastmoney_stock_history", side_effect=fake_stock_history
+            ):
+                histories = _load_sector_stock_histories(
+                    cache=cache,
+                    akshare_client=object(),
+                    periods=[1],
+                    rankings_by_category={
+                        "industry": {1: [RankingRow("SectorA", 1.0, "2026-06-26", 100)]},
+                        "concept": {},
+                    },
+                    boards_by_category={"industry": {"SectorA": BoardInfo("SectorA", "BK0001")}, "concept": {}},
+                    latest_date="2026-06-26",
+                    start_date="20260601",
+                    end_date="20260626",
+                    status=status,
+                    policy=policy,
+                    stock_sector_limit=0,
+                    stock_constituent_limit=0,
+                )
+
+        self.assertEqual(requested_boards, ["SectorA"])
+        self.assertEqual(requested_stocks, ["600000"])
+        self.assertIn("FastStock", histories["industry"]["SectorA"])
 
     def test_build_context_keeps_twenty_ranked_rows_and_period_chart_series(self):
         dates = pd.bdate_range(end=pd.Timestamp("2026-06-26"), periods=70).strftime("%Y-%m-%d")

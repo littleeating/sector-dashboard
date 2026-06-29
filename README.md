@@ -101,7 +101,7 @@ CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 
 本项目新增一个独立的静态网页看板，用来统计行业板块和概念板块在近 `5/10/20/30/45/60` 个交易日的累计涨幅排名，每个周期默认展示前 `20` 名，并把重点板块的 60 日趋势画在同一张 SVG 图里。
 
-看板会分别标注行业板块和概念板块的数据来源。每个周期标题都是可点击按钮，点击后，上方趋势图会切换为该周期全部入榜板块的增长曲线图。
+看板会分别标注行业板块和概念板块的数据来源。每个周期标题都是可点击按钮，点击后，上方趋势图会切换为该周期全部入榜板块的增长曲线图。每个入榜板块行也可以点击展开，显示该板块在当前周期内涨幅前 `20` 名股票，并把这 `20` 只股票按同样的折线图样式绘制成股票趋势图。
 
 离线生成样例网页：
 
@@ -121,6 +121,12 @@ CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 & 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' sector_dashboard.py --output output/sector_dashboard/index.html
 ```
 
+如果需要控制首次生成时的个股请求量，可以限制抓取个股明细的入榜板块数量或每个板块的成分股数量：
+
+```powershell
+& 'C:\Users\AERO\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' sector_dashboard.py --output output/sector_dashboard/index.html --stock-sector-limit 12 --stock-constituent-limit 80
+```
+
 只做接口冒烟验证时，可以限制每类板块数量，避免首次验证请求过多：
 
 ```powershell
@@ -133,8 +139,11 @@ CSV 会依次尝试 `utf-8-sig`、`gbk`、`gb18030` 编码。
 - `--max-workers` 硬上限为 `2`，超过会直接报错。
 - 每次外部请求之间随机等待 `--min-delay 1.2` 到 `--max-delay 2.5` 秒。
 - 命中 `cache/sector_dashboard/` 缓存时不会重复请求同一板块。
+- 成分股和个股历史行情也走同一套顺序请求、随机延迟和缓存策略。
 - 遇到 403、429、验证码、登录页等疑似限流信号时会停止新增外部请求，并尽量使用缓存生成页面。
 - `--board-limit` 默认为 `0`，表示全量；只建议手动验证时临时设置为 `1` 或 `2`。
+- `--stock-sector-limit` 默认为 `0`，表示对所有入榜板块生成个股明细；首次全量运行会显著增加请求量，建议先用较小数值验证。
+- `--stock-constituent-limit` 默认为 `0`，表示每个入榜板块读取全部成分股历史；如果担心首次运行过慢，可先限制为 `60` 到 `100`。
 
 建议通过 Windows 任务计划程序在交易日 `16:30` 后每天运行一次实时命令，输出文件会覆盖 `output/sector_dashboard/index.html`。第一次实时运行需要建立缓存，速度会比较慢；日常更新会优先使用缓存，压力小得多。
 
