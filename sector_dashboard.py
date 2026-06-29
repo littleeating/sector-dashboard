@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -640,7 +641,29 @@ def generate_live_dashboard(
     request_budget: int = 0,
     board_list_timeout: float = 30.0,
     stock_fetch_timeout: float = 30.0,
+    data_source: str = "eastmoney",
+    sina_board_pool_limit: int = 40,
 ) -> Path:
+    if data_source == "sina":
+        return generate_sina_dashboard(
+            output,
+            periods=periods,
+            top_n=top_n,
+            cache_dir=cache_dir,
+            max_workers=max_workers,
+            min_delay=min_delay,
+            max_delay=max_delay,
+            board_limit=board_limit,
+            stock_sector_limit=stock_sector_limit,
+            stock_constituent_limit=stock_constituent_limit,
+            stock_candidate_limit=stock_candidate_limit,
+            request_budget=request_budget,
+            stock_fetch_timeout=stock_fetch_timeout,
+            sina_board_pool_limit=sina_board_pool_limit,
+        )
+    if data_source != "eastmoney":
+        raise ValueError(f"unknown data source: {data_source}")
+
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
     cache = CacheStore(cache_dir, version=LIVE_CACHE_VERSION)
@@ -754,6 +777,96 @@ def generate_live_dashboard(
     return output_path
 
 
+def generate_sina_dashboard(
+    output: str | Path,
+    *,
+    periods: list[int],
+    top_n: int,
+    cache_dir: str | Path,
+    max_workers: int,
+    min_delay: float,
+    max_delay: float,
+    board_limit: int = 0,
+    stock_sector_limit: int = 0,
+    stock_constituent_limit: int = 0,
+    stock_candidate_limit: int = 0,
+    request_budget: int = 0,
+    stock_fetch_timeout: float = 30.0,
+    sina_board_pool_limit: int = 40,
+) -> Path:
+    policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
+    cache = CacheStore(cache_dir, version=f"{LIVE_CACHE_VERSION}-sina-v1")
+    status = SourceStatus(source="sina")
+    today = datetime.now().strftime("%Y-%m-%d")
+    start_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
+    end_date = datetime.now().strftime("%Y%m%d")
+
+    industry_spot = fetch_with_policy(
+        lambda: _fetch_sina_sector_spot("industry", timeout_seconds=stock_fetch_timeout),
+        policy=policy,
+        status=status,
+    )
+    concept_spot = fetch_with_policy(
+        lambda: _fetch_sina_sector_spot("concept", timeout_seconds=stock_fetch_timeout),
+        policy=policy,
+        status=status,
+    )
+    industry_boards = _select_sina_board_pool(industry_spot, limit=board_limit or sina_board_pool_limit)
+    concept_boards = _select_sina_board_pool(concept_spot, limit=board_limit or sina_board_pool_limit)
+
+    seed_rankings = {
+        "industry": _seed_rankings_from_spot(industry_spot, industry_boards, periods),
+        "concept": _seed_rankings_from_spot(concept_spot, concept_boards, periods),
+    }
+    sector_stock_histories = _load_sector_stock_histories(
+        cache=cache,
+        akshare_client=None,
+        periods=periods,
+        rankings_by_category=seed_rankings,
+        boards_by_category={
+            "industry": {board.name: board for board in industry_boards},
+            "concept": {board.name: board for board in concept_boards},
+        },
+        latest_date=today,
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+        policy=policy,
+        stock_sector_limit=stock_sector_limit,
+        stock_constituent_limit=stock_constituent_limit,
+        stock_candidate_limit=stock_candidate_limit,
+        request_budget=request_budget,
+        stock_fetch_timeout=stock_fetch_timeout,
+        source="sina",
+    )
+    aggregated = _aggregate_sector_histories_from_stocks(sector_stock_histories)
+    context = _build_context(
+        industry_histories=aggregated["industry"],
+        concept_histories=aggregated["concept"],
+        periods=periods,
+        top_n=top_n,
+        source_statuses=[status],
+        quality={
+            "max_workers": policy.max_workers,
+            "stock_sector_limit": stock_sector_limit,
+            "stock_constituent_limit": stock_constituent_limit,
+            "stock_candidate_limit": stock_candidate_limit,
+            "request_budget": request_budget,
+            "data_source": "sina",
+            "sina_board_pool_limit": sina_board_pool_limit,
+        },
+        sector_stock_histories=sector_stock_histories,
+    )
+    context["source_labels"] = {
+        "industry": "新浪行业板块（成分股等权重建）",
+        "concept": "新浪概念板块（成分股等权重建）",
+    }
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_dashboard(context), encoding="utf-8")
+    return output_path
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成行业和概念板块动量静态网页。")
     parser.add_argument("--output", default="output/sector_dashboard/index.html", help="输出 HTML 路径。")
@@ -771,6 +884,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--request-budget", type=int, default=0, help="本轮最多新增外部请求数；0 表示不限制。")
     parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
     parser.add_argument("--stock-fetch-timeout", type=float, default=30.0, help="成分股和个股历史接口单次等待秒数；超时后跳过并继续。")
+    parser.add_argument("--data-source", choices=["eastmoney", "sina"], default="eastmoney", help="行情数据源。")
+    parser.add_argument("--sina-board-pool-limit", type=int, default=40, help="新浪模式每类按当日涨跌幅进入候选池的板块数量。")
     return parser.parse_args(argv)
 
 
@@ -795,6 +910,8 @@ def main(argv: list[str] | None = None) -> int:
             request_budget=args.request_budget,
             board_list_timeout=args.board_list_timeout,
             stock_fetch_timeout=args.stock_fetch_timeout,
+            data_source=args.data_source,
+            sina_board_pool_limit=args.sina_board_pool_limit,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -1116,6 +1233,7 @@ def _load_sector_stock_histories(
     stock_candidate_limit: int = 0,
     request_budget: int = 0,
     stock_fetch_timeout: float = 30.0,
+    source: str = "eastmoney",
 ) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
     if stock_sector_limit < 0:
         raise ValueError("stock_sector_limit must not be negative")
@@ -1149,6 +1267,7 @@ def _load_sector_stock_histories(
                     category=category,
                     akshare_client=akshare_client,
                     timeout_seconds=stock_fetch_timeout,
+                    source=source,
                 ),
             )
         except Exception as exc:
@@ -1182,6 +1301,7 @@ def _load_sector_stock_histories(
                         end_date=end_date,
                         akshare_client=akshare_client,
                         timeout_seconds=stock_fetch_timeout,
+                        source=source,
                     ),
                     policy=policy,
                     status=status,
@@ -1211,6 +1331,63 @@ def _select_candidate_stocks_by_board(
         )
         selected[key] = [stock for _, stock in ranked[:candidate_limit]]
     return selected
+
+
+def _select_sina_board_pool(spot: pd.DataFrame, limit: int) -> list[BoardInfo]:
+    if limit < 0:
+        raise ValueError("sina_board_pool_limit must not be negative")
+    required = {"板块", "label", "涨跌幅"}
+    missing = required - set(spot.columns)
+    if missing:
+        raise ValueError("新浪板块行情缺少字段: " + ", ".join(sorted(missing)))
+    sorted_spot = spot.copy()
+    sorted_spot["涨跌幅"] = pd.to_numeric(sorted_spot["涨跌幅"], errors="coerce")
+    sorted_spot = sorted_spot.dropna(subset=["板块", "label", "涨跌幅"]).sort_values("涨跌幅", ascending=False)
+    if limit:
+        sorted_spot = sorted_spot.head(limit)
+    return [BoardInfo(str(row["板块"]), str(row["label"])) for _, row in sorted_spot.iterrows()]
+
+
+def _seed_rankings_from_spot(
+    spot: pd.DataFrame,
+    boards: list[BoardInfo],
+    periods: list[int],
+) -> dict[int, list[RankingRow]]:
+    change_by_name = {
+        str(row["板块"]): float(row["涨跌幅"])
+        for _, row in spot.iterrows()
+        if pd.notna(row.get("板块")) and pd.notna(row.get("涨跌幅"))
+    }
+    rows = [
+        RankingRow(board.name, change_by_name.get(board.name, 0.0), "", 0.0)
+        for board in boards
+    ]
+    return {period: rows for period in periods}
+
+
+def _aggregate_sector_histories_from_stocks(
+    sector_stock_histories: dict[str, dict[str, dict[str, pd.DataFrame]]]
+) -> dict[str, dict[str, pd.DataFrame]]:
+    output: dict[str, dict[str, pd.DataFrame]] = {"industry": {}, "concept": {}}
+    for category, boards in sector_stock_histories.items():
+        for board_name, stocks in boards.items():
+            normalized: list[pd.Series] = []
+            for history in stocks.values():
+                if history.empty or "date" not in history.columns or "close" not in history.columns:
+                    continue
+                frame = history.loc[:, ["date", "close"]].copy()
+                frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+                frame = frame.dropna().sort_values("date")
+                if frame.empty or float(frame["close"].iloc[0]) == 0:
+                    continue
+                series = frame.set_index("date")["close"] / float(frame["close"].iloc[0]) * 100
+                normalized.append(series)
+            if not normalized:
+                continue
+            combined = pd.concat(normalized, axis=1).mean(axis=1).dropna().reset_index()
+            combined.columns = ["date", "close"]
+            output.setdefault(category, {})[board_name] = combined
+    return output
 
 
 def _stock_identity(stock: StockInfo) -> str:
@@ -1280,7 +1457,11 @@ def _fetch_eastmoney_board_constituents(
     category: str,
     akshare_client: Any,
     timeout_seconds: float = 30.0,
+    source: str = "eastmoney",
 ) -> list[StockInfo]:
+    if source == "sina":
+        return _fetch_sina_board_constituents(board, timeout_seconds=timeout_seconds)
+
     if not board.code:
         raise ValueError(f"{board.name} missing board code for constituents")
 
@@ -1314,7 +1495,16 @@ def _fetch_eastmoney_stock_history(
     end_date: str,
     akshare_client: Any,
     timeout_seconds: float = 30.0,
+    source: str = "eastmoney",
 ) -> pd.DataFrame:
+    if source == "sina":
+        return _fetch_sina_stock_history(
+            stock,
+            start_date=start_date,
+            end_date=end_date,
+            timeout_seconds=timeout_seconds,
+        )
+
     import requests
 
     response = requests.get(
@@ -1373,6 +1563,134 @@ def _akshare_stock_history_worker(code: str, start_date: str, end_date: str, que
         queue.put(("ok", frame.to_dict(orient="records")))
     except BaseException as exc:
         queue.put(("error", repr(exc)))
+
+
+def _fetch_sina_sector_spot(category: str, *, timeout_seconds: float) -> pd.DataFrame:
+    import requests
+
+    if category == "industry":
+        params = {"param": "industry"}
+    elif category == "concept":
+        params = {"param": "class"}
+    else:
+        raise ValueError(f"unknown sina category: {category}")
+    response = requests.get(
+        "http://money.finance.sina.com.cn/q/view/newFLJK.php",
+        params=params,
+        timeout=timeout_seconds or 20,
+    )
+    response.raise_for_status()
+    text = response.text
+    payload = json.loads(text[text.find("{") :])
+    rows = []
+    for value in payload.values():
+        fields = str(value).split(",")
+        if len(fields) < 13:
+            continue
+        rows.append(
+            {
+                "label": fields[0],
+                "板块": fields[1],
+                "公司家数": fields[2],
+                "平均价格": fields[3],
+                "涨跌额": fields[4],
+                "涨跌幅": fields[5],
+                "总成交量": fields[6],
+                "总成交额": fields[7],
+                "股票代码": fields[8],
+                "个股-涨跌幅": fields[9],
+                "个股-当前价": fields[10],
+                "个股-涨跌额": fields[11],
+                "股票名称": fields[12],
+            }
+        )
+    frame = pd.DataFrame(rows)
+    for column in ["公司家数", "平均价格", "涨跌额", "涨跌幅", "总成交量", "总成交额", "个股-涨跌幅", "个股-当前价", "个股-涨跌额"]:
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame
+
+
+def _fetch_sina_board_constituents(board: BoardInfo, *, timeout_seconds: float) -> list[StockInfo]:
+    import math
+    import requests
+    from akshare.utils import demjson
+
+    count_response = requests.get(
+        "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCount",
+        params={"node": board.code},
+        timeout=timeout_seconds or 20,
+    )
+    count_response.raise_for_status()
+    total = int(count_response.json())
+    pages = max(1, math.ceil(total / 80))
+    stocks: list[StockInfo] = []
+    for page in range(1, pages + 1):
+        data_response = requests.get(
+            "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData",
+            params={
+                "page": str(page),
+                "num": "80",
+                "sort": "changepercent",
+                "asc": "0",
+                "node": board.code,
+                "symbol": "",
+                "_s_r_a": "page",
+            },
+            timeout=timeout_seconds or 20,
+        )
+        data_response.raise_for_status()
+        for row in demjson.decode(data_response.text):
+            symbol = str(row.get("symbol", ""))
+            name = str(row.get("name", ""))
+            if symbol and name:
+                stocks.append(StockInfo(name=name, code=symbol))
+    return stocks
+
+
+def _fetch_sina_stock_history(
+    stock: StockInfo,
+    *,
+    start_date: str,
+    end_date: str,
+    timeout_seconds: float,
+) -> pd.DataFrame:
+    import requests
+    from akshare.stock.stock_zh_a_sina import hk_js_decode, zh_sina_a_stock_hist_url
+    from py_mini_racer import MiniRacer
+
+    symbol = _sina_symbol(stock.code)
+    response = requests.get(zh_sina_a_stock_hist_url.format(symbol), timeout=timeout_seconds or 20)
+    response.raise_for_status()
+    js_code = MiniRacer()
+    js_code.eval(hk_js_decode)
+    encoded = response.text.split("=")[1].split(";")[0].replace('"', "")
+    rows = js_code.call("d", encoded)
+    frame = pd.DataFrame(rows)
+    if frame.empty or "date" not in frame.columns or "close" not in frame.columns:
+        raise ValueError(f"{stock.name}({stock.code}) missing sina history data")
+    frame = frame.loc[:, ["date", "close"]].copy()
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    start = pd.to_datetime(start_date).strftime("%Y-%m-%d")
+    end = pd.to_datetime(end_date).strftime("%Y-%m-%d")
+    frame = frame.dropna()
+    frame = frame[(frame["date"] >= start) & (frame["date"] <= end)]
+    if frame.empty:
+        raise ValueError(f"{stock.name}({stock.code}) missing sina close data")
+    return frame
+
+
+def _sina_symbol(code: str) -> str:
+    normalized = str(code).strip().lower()
+    if normalized.startswith(("sh", "sz", "bj")):
+        return normalized
+    digits = _normalize_stock_code(normalized)
+    if digits.startswith(("5", "6", "9")):
+        return f"sh{digits}"
+    if digits.startswith(("4", "8")):
+        return f"bj{digits}"
+    return f"sz{digits}"
 
 
 def _fetch_eastmoney_clist_rows(url: str, params: dict[str, str], *, timeout_seconds: float) -> list[dict[str, Any]]:

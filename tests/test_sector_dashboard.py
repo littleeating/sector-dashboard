@@ -14,6 +14,8 @@ from sector_dashboard import (
     _load_sector_stock_histories,
     _load_board_infos,
     _load_board_infos_cached,
+    _select_sina_board_pool,
+    _aggregate_sector_histories_from_stocks,
     generate_live_dashboard,
     generate_sample_dashboard,
     render_dashboard,
@@ -338,6 +340,35 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(len(context["sector_stock_chart_series"]["industry"][2]["SectorA"]), 2)
         self.assertTrue(context["quality"]["stock_rankings_enabled"])
         self.assertEqual(context["quality"]["stock_sector_count"], 1)
+
+    def test_select_sina_board_pool_keeps_highest_current_change_boards(self):
+        spot = pd.DataFrame(
+            [
+                {"板块": "Slow", "label": "slow", "涨跌幅": 1.0},
+                {"板块": "Fast", "label": "fast", "涨跌幅": 5.0},
+                {"板块": "Mid", "label": "mid", "涨跌幅": 3.0},
+            ]
+        )
+
+        boards = _select_sina_board_pool(spot, limit=2)
+
+        self.assertEqual(boards, [BoardInfo("Fast", "fast"), BoardInfo("Mid", "mid")])
+
+    def test_aggregate_sector_histories_from_stocks_builds_equal_weight_index(self):
+        histories = {
+            "industry": {
+                "SectorA": {
+                    "Fast": pd.DataFrame({"date": ["2026-06-25", "2026-06-26"], "close": [10, 20]}),
+                    "Flat": pd.DataFrame({"date": ["2026-06-25", "2026-06-26"], "close": [10, 10]}),
+                }
+            },
+            "concept": {},
+        }
+
+        sector_histories = _aggregate_sector_histories_from_stocks(histories)
+
+        self.assertEqual(sector_histories["industry"]["SectorA"]["date"].tolist(), ["2026-06-25", "2026-06-26"])
+        self.assertEqual(sector_histories["industry"]["SectorA"]["close"].round(2).tolist(), [100.0, 150.0])
 
     def test_load_sector_stock_histories_fetches_ranked_boards_and_stock_histories(self):
         with tempfile.TemporaryDirectory() as temp_dir:
