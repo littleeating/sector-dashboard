@@ -634,6 +634,7 @@ def generate_live_dashboard(
     stock_candidate_limit: int = 0,
     request_budget: int = 0,
     board_list_timeout: float = 30.0,
+    stock_fetch_timeout: float = 30.0,
 ) -> Path:
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
@@ -725,6 +726,7 @@ def generate_live_dashboard(
         stock_constituent_limit=stock_constituent_limit,
         stock_candidate_limit=stock_candidate_limit,
         request_budget=request_budget,
+        stock_fetch_timeout=stock_fetch_timeout,
     )
     context = _build_context(
         industry_histories=industry_histories,
@@ -763,6 +765,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--stock-candidate-limit", type=int, default=0, help="按跨板块重复度筛选每个板块候选股票数量；0 表示不启用。")
     parser.add_argument("--request-budget", type=int, default=0, help="本轮最多新增外部请求数；0 表示不限制。")
     parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
+    parser.add_argument("--stock-fetch-timeout", type=float, default=30.0, help="成分股和个股历史接口单次等待秒数；超时后跳过并继续。")
     return parser.parse_args(argv)
 
 
@@ -786,6 +789,7 @@ def main(argv: list[str] | None = None) -> int:
             stock_candidate_limit=args.stock_candidate_limit,
             request_budget=args.request_budget,
             board_list_timeout=args.board_list_timeout,
+            stock_fetch_timeout=args.stock_fetch_timeout,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -983,23 +987,33 @@ def _fetch_akshare_board_list(category: str, *, timeout_seconds: float) -> pd.Da
     if timeout_seconds <= 0:
         return _fetch_akshare_board_list_direct(category)
 
+    payload = _run_timed_worker(
+        f"{category} board list",
+        timeout_seconds,
+        _akshare_board_list_worker,
+        category,
+    )
+    return pd.DataFrame(payload)
+
+
+def _run_timed_worker(label: str, timeout_seconds: float, worker: Any, *args: Any) -> Any:
     import multiprocessing as mp
 
     queue: mp.Queue = mp.Queue(maxsize=1)
-    process = mp.Process(target=_akshare_board_list_worker, args=(category, queue), daemon=True)
+    process = mp.Process(target=worker, args=(*args, queue), daemon=True)
     process.start()
     process.join(timeout_seconds)
     if process.is_alive():
         process.terminate()
         process.join(5)
-        raise TimeoutError(f"{category} board list timed out after {timeout_seconds:.0f}s")
+        raise TimeoutError(f"{label} timed out after {timeout_seconds:.0f}s")
 
     if queue.empty():
-        raise RuntimeError(f"{category} board list worker exited without data")
+        raise RuntimeError(f"{label} worker exited without data")
 
     state, payload = queue.get()
     if state == "ok":
-        return pd.DataFrame(payload)
+        return payload
     raise RuntimeError(str(payload))
 
 
@@ -1073,6 +1087,7 @@ def _load_sector_stock_histories(
     stock_constituent_limit: int,
     stock_candidate_limit: int = 0,
     request_budget: int = 0,
+    stock_fetch_timeout: float = 30.0,
 ) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
     if stock_sector_limit < 0:
         raise ValueError("stock_sector_limit must not be negative")
@@ -1105,6 +1120,7 @@ def _load_sector_stock_histories(
                     board,
                     category=category,
                     akshare_client=akshare_client,
+                    timeout_seconds=stock_fetch_timeout,
                 ),
             )
         except Exception as exc:
@@ -1137,6 +1153,7 @@ def _load_sector_stock_histories(
                         start_date=start_date,
                         end_date=end_date,
                         akshare_client=akshare_client,
+                        timeout_seconds=stock_fetch_timeout,
                     ),
                     policy=policy,
                     status=status,
@@ -1234,7 +1251,18 @@ def _fetch_eastmoney_board_constituents(
     *,
     category: str,
     akshare_client: Any,
+    timeout_seconds: float = 30.0,
 ) -> list[StockInfo]:
+    if timeout_seconds > 0:
+        payload = _run_timed_worker(
+            f"{category} constituents {board.name}",
+            timeout_seconds,
+            _akshare_constituents_worker,
+            category,
+            board.name,
+        )
+        return _stock_infos_from_frame(pd.DataFrame(payload))
+
     if category == "industry":
         frame = akshare_client.stock_board_industry_cons_em(symbol=board.name)
     elif category == "concept":
@@ -1250,7 +1278,19 @@ def _fetch_eastmoney_stock_history(
     start_date: str,
     end_date: str,
     akshare_client: Any,
+    timeout_seconds: float = 30.0,
 ) -> pd.DataFrame:
+    if timeout_seconds > 0:
+        payload = _run_timed_worker(
+            f"stock history {stock.code} {stock.name}",
+            timeout_seconds,
+            _akshare_stock_history_worker,
+            _normalize_stock_code(stock.code),
+            start_date,
+            end_date,
+        )
+        return _normalize_history(pd.DataFrame(payload))
+
     frame = akshare_client.stock_zh_a_hist(
         symbol=_normalize_stock_code(stock.code),
         period="daily",
@@ -1259,6 +1299,35 @@ def _fetch_eastmoney_stock_history(
         adjust="",
     )
     return _normalize_history(frame)
+
+
+def _akshare_constituents_worker(category: str, board_name: str, queue: Any) -> None:
+    try:
+        akshare_client = load_akshare()
+        if category == "industry":
+            frame = akshare_client.stock_board_industry_cons_em(symbol=board_name)
+        elif category == "concept":
+            frame = akshare_client.stock_board_concept_cons_em(symbol=board_name)
+        else:
+            raise ValueError(f"unknown board category: {category}")
+        queue.put(("ok", frame.to_dict(orient="records")))
+    except BaseException as exc:
+        queue.put(("error", repr(exc)))
+
+
+def _akshare_stock_history_worker(code: str, start_date: str, end_date: str, queue: Any) -> None:
+    try:
+        akshare_client = load_akshare()
+        frame = akshare_client.stock_zh_a_hist(
+            symbol=_normalize_stock_code(code),
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+        )
+        queue.put(("ok", frame.to_dict(orient="records")))
+    except BaseException as exc:
+        queue.put(("error", repr(exc)))
 
 
 def _stock_infos_from_frame(frame: pd.DataFrame) -> list[StockInfo]:
