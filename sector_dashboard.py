@@ -652,7 +652,7 @@ def generate_live_dashboard(
     cache_only: bool = False,
     board_cache_only: bool = False,
 ) -> Path:
-    stock_data_source = stock_data_source or data_source
+    stock_data_source = stock_data_source or ("eastmoney_snapshot" if data_source == "eastmoney" else data_source)
     if data_source == "sina":
         return generate_sina_dashboard(
             output,
@@ -678,7 +678,12 @@ def generate_live_dashboard(
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
     cache = CacheStore(cache_dir, version=LIVE_CACHE_VERSION)
-    status_source = "eastmoney" if stock_data_source == "eastmoney" else "eastmoney+sina"
+    if stock_data_source == "sina":
+        status_source = "eastmoney+sina"
+    elif stock_data_source == "eastmoney_snapshot":
+        status_source = "eastmoney+snapshot"
+    else:
+        status_source = "eastmoney"
     status = SourceStatus(source=status_source)
     ak = load_akshare()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -791,6 +796,7 @@ def generate_live_dashboard(
         stock_sector_limit=stock_sector_limit,
         stock_constituent_limit=stock_constituent_limit,
         stock_candidate_limit=stock_candidate_limit,
+        stock_top_n=stock_top_n,
         request_budget=request_budget,
         stock_fetch_timeout=stock_fetch_timeout,
         source=stock_constituent_source,
@@ -880,6 +886,7 @@ def generate_sina_dashboard(
         stock_sector_limit=stock_sector_limit,
         stock_constituent_limit=stock_constituent_limit,
         stock_candidate_limit=stock_candidate_limit,
+        stock_top_n=stock_top_n,
         request_budget=request_budget,
         stock_fetch_timeout=stock_fetch_timeout,
         source="sina",
@@ -933,7 +940,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
     parser.add_argument("--stock-fetch-timeout", type=float, default=30.0, help="成分股和个股历史接口单次等待秒数；超时后跳过并继续。")
     parser.add_argument("--data-source", choices=["eastmoney", "sina"], default="eastmoney", help="行情数据源。")
-    parser.add_argument("--stock-data-source", choices=["eastmoney", "sina"], default=None, help="个股历史行情数据源；默认跟随 data-source。")
+    parser.add_argument("--stock-data-source", choices=["eastmoney", "eastmoney_snapshot", "sina"], default=None, help="个股数据源；东方财富模式默认使用全市场快照本地过滤。")
     parser.add_argument("--sina-board-pool-limit", type=int, default=40, help="新浪模式每类按当日涨跌幅进入候选池的板块数量。")
     parser.add_argument("--cache-only", action="store_true", help="只使用已有缓存生成页面，不新增外部请求。")
     parser.add_argument("--board-cache-only", action="store_true", help="只对板块历史使用缓存；股票数据仍按参数抓取或读取。")
@@ -1202,11 +1209,11 @@ def _fetch_akshare_board_list_direct(category: str) -> pd.DataFrame:
 
 def _fetch_eastmoney_board_list(category: str, *, timeout_seconds: float) -> pd.DataFrame:
     if category == "industry":
-        url = "https://17.push2.eastmoney.com/api/qt/clist/get"
+        url = "https://push2delay.eastmoney.com/api/qt/clist/get"
         fs = "m:90 t:2 f:!50"
         fid = "f3"
     elif category == "concept":
-        url = "https://79.push2.eastmoney.com/api/qt/clist/get"
+        url = "https://push2delay.eastmoney.com/api/qt/clist/get"
         fs = "m:90 t:3 f:!50"
         fid = "f12"
     else:
@@ -1298,6 +1305,7 @@ def _load_sector_stock_histories(
     stock_sector_limit: int,
     stock_constituent_limit: int,
     stock_candidate_limit: int = 0,
+    stock_top_n: int = DEFAULT_STOCK_TOP_N,
     request_budget: int = 0,
     stock_fetch_timeout: float = 30.0,
     source: str = "eastmoney",
@@ -1311,6 +1319,8 @@ def _load_sector_stock_histories(
         raise ValueError("stock_constituent_limit must not be negative")
     if stock_candidate_limit < 0:
         raise ValueError("stock_candidate_limit must not be negative")
+    if stock_top_n <= 0:
+        raise ValueError("stock_top_n must be greater than zero")
     if request_budget < 0:
         raise ValueError("request_budget must not be negative")
 
@@ -1347,6 +1357,41 @@ def _load_sector_stock_histories(
 
         constituents_by_board[(category, board.name)] = constituents
         selected_with_constituents.append((category, board))
+
+    if stock_history_source == "eastmoney_snapshot":
+        if not selected_with_constituents:
+            return output
+        if status.limited or _request_budget_reached(status, request_budget):
+            return output
+        try:
+            snapshot = _get_or_fetch_market_snapshot(
+                cache=cache,
+                latest_date=latest_date,
+                status=status,
+                policy=policy,
+                timeout_seconds=stock_fetch_timeout,
+                cache_only=cache_only,
+                request_budget=request_budget,
+            )
+        except Exception as exc:
+            status.messages.append(f"eastmoney market snapshot: {exc}")
+            return output
+
+        max_period = max(periods) if periods else 1
+        snapshot_by_code = _market_snapshot_by_code(snapshot)
+        for category, board in selected_with_constituents:
+            stocks = constituents_by_board.get((category, board.name), [])
+            output.setdefault(category, {}).setdefault(board.name, {})
+            output[category][board.name].update(
+                _snapshot_histories_for_constituents(
+                    constituents=stocks,
+                    snapshot_by_code=snapshot_by_code,
+                    latest_date=latest_date,
+                    max_period=max_period,
+                    top_n=stock_top_n,
+                )
+            )
+        return output
 
     candidates_by_board = _select_candidate_stocks_by_board(constituents_by_board, stock_candidate_limit)
 
@@ -1410,6 +1455,118 @@ def _select_candidate_stocks_by_board(
         )
         selected[key] = [stock for _, stock in ranked[:candidate_limit]]
     return selected
+
+
+def _get_or_fetch_market_snapshot(
+    *,
+    cache: CacheStore,
+    latest_date: str,
+    status: SourceStatus,
+    policy: AccessPolicy,
+    timeout_seconds: float,
+    cache_only: bool = False,
+    request_budget: int = 0,
+) -> pd.DataFrame:
+    cache_category = "stock_snapshot/global"
+    cache_name = "eastmoney_market"
+    cached = cache.read_history(cache_category, cache_name)
+    if cached is not None:
+        frame, cached_date = cached
+        if cached_date == latest_date:
+            status.cache_hits += 1
+            return frame
+    if cache_only:
+        raise ValueError("missing cached eastmoney market snapshot")
+
+    page_size = 100
+    first_page, total = fetch_with_policy(
+        lambda: _fetch_eastmoney_market_snapshot_page(1, page_size, timeout_seconds=timeout_seconds),
+        policy=policy,
+        status=status,
+    )
+    frames = [first_page]
+    page_count = max(1, (int(total) + page_size - 1) // page_size)
+    for page in range(2, page_count + 1):
+        if status.limited or _request_budget_reached(status, request_budget):
+            break
+        page_frame, _ = fetch_with_policy(
+            lambda page=page: _fetch_eastmoney_market_snapshot_page(page, page_size, timeout_seconds=timeout_seconds),
+            policy=policy,
+            status=status,
+        )
+        frames.append(page_frame)
+    frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    cache.write_history(cache_category, cache_name, frame, data_date=latest_date)
+    return frame
+
+
+def _market_snapshot_by_code(snapshot: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    required = {"code", "name", "close", "return_pct"}
+    missing = required - set(snapshot.columns)
+    if missing:
+        raise ValueError("eastmoney market snapshot missing columns: " + ", ".join(sorted(missing)))
+
+    rows: dict[str, dict[str, Any]] = {}
+    for _, row in snapshot.iterrows():
+        code = _normalize_stock_code(str(row.get("code", "")))
+        if not code:
+            continue
+        close = _to_float_or_none(row.get("close"))
+        return_pct = _to_float_or_none(row.get("return_pct"))
+        if close is None or return_pct is None:
+            continue
+        rows[code] = {
+            "code": code,
+            "name": str(row.get("name") or ""),
+            "close": close,
+            "return_pct": return_pct,
+        }
+    return rows
+
+
+def _snapshot_histories_for_constituents(
+    *,
+    constituents: list[StockInfo],
+    snapshot_by_code: dict[str, dict[str, Any]],
+    latest_date: str,
+    max_period: int,
+    top_n: int,
+) -> dict[str, pd.DataFrame]:
+    matched: list[tuple[StockInfo, dict[str, Any]]] = []
+    for stock in constituents:
+        snapshot = snapshot_by_code.get(_normalize_stock_code(stock.code))
+        if snapshot is not None:
+            matched.append((stock, snapshot))
+
+    selected = sorted(matched, key=lambda item: float(item[1]["return_pct"]), reverse=True)[:top_n]
+    return {
+        stock.name or str(snapshot.get("name") or stock.code): _snapshot_row_to_history(
+            latest_date=latest_date,
+            close=float(snapshot["close"]),
+            return_pct=float(snapshot["return_pct"]),
+            max_period=max_period,
+        )
+        for stock, snapshot in selected
+    }
+
+
+def _snapshot_row_to_history(*, latest_date: str, close: float, return_pct: float, max_period: int) -> pd.DataFrame:
+    if close <= 0 or return_pct <= -100:
+        return pd.DataFrame(columns=["date", "close"])
+    base_close = close / (1 + return_pct / 100)
+    try:
+        latest = datetime.strptime(latest_date, "%Y-%m-%d")
+    except ValueError:
+        latest = datetime.now()
+    rows = [
+        {
+            "date": (latest - timedelta(days=max_period - index)).strftime("%Y-%m-%d"),
+            "close": round(base_close, 4),
+        }
+        for index in range(max_period)
+    ]
+    rows.append({"date": latest.strftime("%Y-%m-%d"), "close": round(close, 4)})
+    return pd.DataFrame(rows)
 
 
 def _select_sina_board_pool(spot: pd.DataFrame, limit: int) -> list[BoardInfo]:
@@ -1647,7 +1804,7 @@ def _fetch_eastmoney_board_constituents(
         raise ValueError(f"{board.name} missing board code for constituents")
 
     rows = _fetch_eastmoney_clist_rows(
-        "https://29.push2.eastmoney.com/api/qt/clist/get",
+        "https://push2delay.eastmoney.com/api/qt/clist/get",
         {
             "pn": "1",
             "pz": "5000",
@@ -1669,6 +1826,60 @@ def _fetch_eastmoney_board_constituents(
     ]
 
 
+def _fetch_eastmoney_market_snapshot(*, timeout_seconds: float) -> pd.DataFrame:
+    page_size = 100
+    first_page, total = _fetch_eastmoney_market_snapshot_page(1, page_size, timeout_seconds=timeout_seconds)
+    frames = [first_page]
+    page_count = max(1, (int(total) + page_size - 1) // page_size)
+    for page in range(2, page_count + 1):
+        page_frame, _ = _fetch_eastmoney_market_snapshot_page(page, page_size, timeout_seconds=timeout_seconds)
+        frames.append(page_frame)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _fetch_eastmoney_market_snapshot_page(
+    page: int,
+    page_size: int,
+    *,
+    timeout_seconds: float,
+) -> tuple[pd.DataFrame, int]:
+    payload = _fetch_eastmoney_clist_payload(
+        "https://push2delay.eastmoney.com/api/qt/clist/get",
+        {
+            "pn": str(page),
+            "pz": str(page_size),
+            "po": "1",
+            "np": "1",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": "2",
+            "invt": "2",
+            "fid": "f3",
+            "fs": "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048",
+            "fields": "f2,f3,f12,f14",
+        },
+        timeout_seconds=timeout_seconds or 20,
+    )
+    data = payload.get("data") or {}
+    rows = data.get("diff") or []
+    if isinstance(rows, dict):
+        rows = list(rows.values())
+    if not isinstance(rows, list):
+        raise ValueError("eastmoney market snapshot returned unexpected rows")
+    total = int(data.get("total") or len(rows))
+    return pd.DataFrame(
+        [
+            {
+                "code": _normalize_stock_code(str(row.get("f12", ""))),
+                "name": str(row.get("f14", "")),
+                "close": _to_float_or_none(row.get("f2")),
+                "return_pct": _to_float_or_none(row.get("f3")),
+            }
+            for row in rows
+            if isinstance(row, dict) and row.get("f12") and row.get("f14")
+        ]
+    ).dropna(subset=["close", "return_pct"]), total
+
+
 def _fetch_eastmoney_stock_history(
     stock: StockInfo,
     *,
@@ -1685,6 +1896,8 @@ def _fetch_eastmoney_stock_history(
             end_date=end_date,
             timeout_seconds=timeout_seconds,
         )
+    if source == "eastmoney_snapshot":
+        raise ValueError("eastmoney_snapshot must be loaded through market snapshot filtering")
 
     import requests
 
@@ -1875,17 +2088,38 @@ def _sina_symbol(code: str) -> str:
 
 
 def _fetch_eastmoney_clist_rows(url: str, params: dict[str, str], *, timeout_seconds: float) -> list[dict[str, Any]]:
-    import requests
-
-    response = requests.get(url, params=params, headers=EASTMONEY_HEADERS, timeout=timeout_seconds)
-    response.raise_for_status()
-    payload = response.json()
+    payload = _fetch_eastmoney_clist_payload(url, params, timeout_seconds=timeout_seconds)
     rows = ((payload.get("data") or {}).get("diff") or [])
     if isinstance(rows, dict):
         rows = list(rows.values())
     if not isinstance(rows, list):
         raise ValueError("eastmoney clist returned unexpected rows")
     return [row for row in rows if isinstance(row, dict)]
+
+
+def _fetch_eastmoney_clist_payload(url: str, params: dict[str, str], *, timeout_seconds: float) -> dict[str, Any]:
+    import requests
+
+    try:
+        response = requests.get(url, params=params, headers=EASTMONEY_HEADERS, timeout=timeout_seconds)
+    except requests.exceptions.RequestException:
+        delay_url = _eastmoney_delay_clist_url(url)
+        if delay_url == url:
+            raise
+        response = requests.get(delay_url, params=params, headers=EASTMONEY_HEADERS, timeout=timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("eastmoney clist returned unexpected payload")
+    return payload
+
+
+def _eastmoney_delay_clist_url(url: str) -> str:
+    if "push2delay.eastmoney.com/api/qt/clist/get" in url:
+        return url
+    if "/api/qt/clist/get" not in url or "eastmoney.com" not in url:
+        return url
+    return "https://push2delay.eastmoney.com/api/qt/clist/get"
 
 
 def _stock_infos_from_frame(frame: pd.DataFrame) -> list[StockInfo]:
@@ -1910,6 +2144,13 @@ def _first_existing_column(frame: pd.DataFrame, candidates: list[str]) -> str | 
 def _normalize_stock_code(code: str) -> str:
     digits = "".join(ch for ch in str(code) if ch.isdigit())
     return digits or str(code).strip()
+
+
+def _to_float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _stock_secid(code: str) -> str:

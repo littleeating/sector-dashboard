@@ -11,6 +11,7 @@ from sector_dashboard import (
     StockInfo,
     _build_context,
     _fetch_eastmoney_stock_history,
+    _fetch_eastmoney_clist_rows,
     _limit_boards,
     _load_sector_stock_histories,
     _load_board_infos,
@@ -583,6 +584,81 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(requested_constituents, ["BK0001"])
         self.assertEqual(requested_sina_stocks, ["600000"])
         self.assertIn("FastStock", histories["industry"]["SectorA"])
+
+    def test_load_sector_stock_histories_uses_eastmoney_snapshot_without_per_stock_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            policy = AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=())
+            constituents = [StockInfo(f"Stock{i:02d}", f"6000{i:02d}") for i in range(12)]
+            snapshot = pd.DataFrame(
+                [
+                    {
+                        "code": stock.code,
+                        "name": stock.name,
+                        "close": 10 + index,
+                        "return_pct": index,
+                    }
+                    for index, stock in enumerate(constituents)
+                ]
+            )
+
+            with patch("sector_dashboard._fetch_eastmoney_board_constituents", return_value=constituents), patch(
+                "sector_dashboard._fetch_eastmoney_market_snapshot_page", return_value=(snapshot, len(snapshot))
+            ) as snapshot_fetcher, patch("sector_dashboard._fetch_eastmoney_stock_history") as stock_history_fetcher:
+                histories = _load_sector_stock_histories(
+                    cache=cache,
+                    akshare_client=object(),
+                    periods=[5],
+                    rankings_by_category={
+                        "industry": {5: [RankingRow("SectorA", 1.0, "2026-06-26", 100)]},
+                        "concept": {},
+                    },
+                    boards_by_category={"industry": {"SectorA": BoardInfo("SectorA", "BK0001")}, "concept": {}},
+                    latest_date="2026-06-26",
+                    start_date="20260601",
+                    end_date="20260626",
+                    status=status,
+                    policy=policy,
+                    stock_sector_limit=0,
+                    stock_constituent_limit=0,
+                    stock_candidate_limit=0,
+                    stock_top_n=10,
+                    source="eastmoney",
+                    stock_history_source="eastmoney_snapshot",
+                )
+
+        self.assertEqual(snapshot_fetcher.call_count, 1)
+        self.assertEqual(stock_history_fetcher.call_count, 0)
+        self.assertEqual(list(histories["industry"]["SectorA"].keys()), [f"Stock{i:02d}" for i in range(11, 1, -1)])
+
+    def test_fetch_eastmoney_clist_rows_falls_back_to_delay_endpoint_once(self):
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"data": {"diff": [{"f12": "600000", "f14": "测试股份"}]}}
+
+        requested_urls: list[str] = []
+
+        def fake_get(url: str, **_: object) -> FakeResponse:
+            import requests
+
+            requested_urls.append(url)
+            if len(requested_urls) == 1:
+                raise requests.exceptions.ConnectionError("Remote end closed connection without response")
+            return FakeResponse()
+
+        with patch("requests.get", side_effect=fake_get):
+            rows = _fetch_eastmoney_clist_rows(
+                "https://82.push2.eastmoney.com/api/qt/clist/get",
+                {"pn": "1"},
+                timeout_seconds=3,
+            )
+
+        self.assertEqual(rows, [{"f12": "600000", "f14": "测试股份"}])
+        self.assertEqual(requested_urls[1], "https://push2delay.eastmoney.com/api/qt/clist/get")
 
     def test_build_context_keeps_twenty_ranked_rows_and_period_chart_series(self):
         dates = pd.bdate_range(end=pd.Timestamp("2026-06-26"), periods=70).strftime("%Y-%m-%d")
