@@ -603,8 +603,14 @@ class SectorDashboardRenderTest(unittest.TestCase):
                 ]
             )
 
+            snapshot["date"] = "2026-06-26"
+
             with patch("sector_dashboard._fetch_eastmoney_board_constituents", return_value=constituents), patch(
-                "sector_dashboard._fetch_eastmoney_market_snapshot_page", return_value=(snapshot, len(snapshot))
+                "sector_dashboard._fetch_eastmoney_snapshot_dates", return_value=["2026-06-26"], create=True
+            ), patch(
+                "sector_dashboard._fetch_eastmoney_market_snapshot_for_date",
+                return_value=(snapshot, len(snapshot)),
+                create=True,
             ) as snapshot_fetcher, patch("sector_dashboard._fetch_eastmoney_stock_history") as stock_history_fetcher:
                 histories = _load_sector_stock_histories(
                     cache=cache,
@@ -630,7 +636,61 @@ class SectorDashboardRenderTest(unittest.TestCase):
 
         self.assertEqual(snapshot_fetcher.call_count, 1)
         self.assertEqual(stock_history_fetcher.call_count, 0)
-        self.assertEqual(list(histories["industry"]["SectorA"].keys()), [f"Stock{i:02d}" for i in range(11, 1, -1)])
+        self.assertEqual(list(histories["industry"]["SectorA"].keys()), [f"Stock{i:02d}" for i in range(12)])
+
+    def test_load_sector_stock_histories_uses_sixty_day_snapshot_series(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            status = SourceStatus(source="eastmoney")
+            policy = AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=())
+            constituents = [StockInfo("FastStock", "600001"), StockInfo("SlowStock", "600002")]
+            snapshots = {
+                "2026-06-25": pd.DataFrame(
+                    [
+                        {"code": "600001", "name": "FastStock", "date": "2026-06-25", "close": 10, "return_pct": 0},
+                        {"code": "600002", "name": "SlowStock", "date": "2026-06-25", "close": 10, "return_pct": 0},
+                    ]
+                ),
+                "2026-06-26": pd.DataFrame(
+                    [
+                        {"code": "600001", "name": "FastStock", "date": "2026-06-26", "close": 15, "return_pct": 50},
+                        {"code": "600002", "name": "SlowStock", "date": "2026-06-26", "close": 11, "return_pct": 10},
+                    ]
+                ),
+            }
+
+            with patch("sector_dashboard._fetch_eastmoney_board_constituents", return_value=constituents), patch(
+                "sector_dashboard._fetch_eastmoney_snapshot_dates", return_value=["2026-06-25", "2026-06-26"], create=True
+            ), patch(
+                "sector_dashboard._fetch_eastmoney_market_snapshot_for_date",
+                side_effect=lambda trade_date, **_: (snapshots[trade_date], len(snapshots[trade_date])),
+                create=True,
+            ), patch("sector_dashboard._fetch_eastmoney_stock_history") as stock_history_fetcher:
+                histories = _load_sector_stock_histories(
+                    cache=cache,
+                    akshare_client=object(),
+                    periods=[1],
+                    rankings_by_category={
+                        "industry": {1: [RankingRow("SectorA", 1.0, "2026-06-26", 100)]},
+                        "concept": {},
+                    },
+                    boards_by_category={"industry": {"SectorA": BoardInfo("SectorA", "BK0001")}, "concept": {}},
+                    latest_date="2026-06-26",
+                    start_date="20260601",
+                    end_date="20260626",
+                    status=status,
+                    policy=policy,
+                    stock_sector_limit=0,
+                    stock_constituent_limit=0,
+                    stock_candidate_limit=0,
+                    stock_top_n=10,
+                    source="eastmoney",
+                    stock_history_source="eastmoney_snapshot",
+                )
+
+        self.assertEqual(stock_history_fetcher.call_count, 0)
+        self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["date"].tolist(), ["2026-06-25", "2026-06-26"])
+        self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["close"].tolist(), [10, 15])
 
     def test_fetch_eastmoney_clist_rows_falls_back_to_delay_endpoint_once(self):
         class FakeResponse:
