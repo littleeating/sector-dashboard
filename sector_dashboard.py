@@ -200,8 +200,9 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
         parts.append("</g>")
         legend_x = pad_left + (index % 5) * 176
         row_y = legend_y + (index // 5) * 20
+        stock_code_attr = f' data-stock-code="{html.escape(item.code, quote=True)}"' if item.code else ""
         parts.append(
-            f'<g class="legend-item" data-series-id="{series_id}" role="button" tabindex="0" '
+            f'<g class="legend-item" data-series-id="{series_id}"{stock_code_attr} data-stock-name="{html.escape(item.name, quote=True)}" role="button" tabindex="0" '
             f'aria-label="高亮 {html.escape(item.name)}" onclick="selectLegendSeries(this)" '
             f'onkeydown="handleLegendKey(event, this)">'
         )
@@ -236,9 +237,19 @@ def _render_chart_panels(
                 title = f"{label} {board_name} {period}日股票涨幅趋势"
                 panels.append(
                     f'<div class="chart-panel stock-chart-panel" data-chart-key="{html.escape(key, quote=True)}" '
-                    f'data-chart-title="{html.escape(title, quote=True)}" hidden>{build_svg_chart(series)}</div>'
+                    f'data-chart-title="{html.escape(title, quote=True)}" hidden>'
+                    f'<div class="stock-linked-layout"><div class="stock-trend-pane">{build_svg_chart(series)}</div>{_render_kline_shell()}</div>'
+                    f'</div>'
                 )
     return "\n".join(panels)
+
+
+def _render_kline_shell() -> str:
+    return """
+<aside class="kline-pane" data-kline-panel>
+  <div class="kline-empty">选择左侧股票图例后显示近60日K线</div>
+</aside>
+"""
 
 
 def _render_header(context: dict[str, Any]) -> str:
@@ -354,6 +365,8 @@ def _stock_chart_key(category: str, period: int, board_name: str) -> str:
 def _interaction_script() -> str:
     return """
 <script>
+const klineCache = new Map();
+
 function showPeriodChart(key) {
   const panels = document.querySelectorAll('.chart-panel');
   let activeTitle = '重点板块趋势对比';
@@ -445,6 +458,7 @@ function selectLegendSeries(legendItem) {
   const isSelected = svg.dataset.selectedSeries === seriesId;
   clearLegendSelection(panel);
   if (isSelected) {
+    resetKlinePanel(panel);
     return;
   }
   svg.dataset.selectedSeries = seriesId;
@@ -458,6 +472,269 @@ function selectLegendSeries(legendItem) {
       node.setAttribute('aria-pressed', selected ? 'true' : 'false');
     }
   });
+  loadKlineForLegend(panel, legendItem);
+}
+
+function resetKlinePanel(panel) {
+  const pane = panel.querySelector('[data-kline-panel]');
+  if (pane) {
+    pane.innerHTML = '<div class="kline-empty">选择左侧股票图例后显示近60日K线</div>';
+  }
+}
+
+function loadKlineForLegend(panel, legendItem) {
+  if (!panel.classList.contains('stock-chart-panel')) {
+    return;
+  }
+  const pane = panel.querySelector('[data-kline-panel]');
+  const code = legendItem.dataset.stockCode || '';
+  const name = legendItem.dataset.stockName || legendItem.textContent.trim();
+  if (!pane || !code) {
+    return;
+  }
+  pane.dataset.stockCode = code;
+  pane.dataset.stockName = name;
+  pane.innerHTML = '<div class="kline-loading">正在加载 ' + escapeHtml(name) + ' 近60日K线...</div>';
+  const cached = klineCache.get(code);
+  if (cached) {
+    renderKlinePane(pane, name, cached, cached.length - 1);
+    return;
+  }
+  fetchEastmoneyKline(code)
+    .then((rows) => {
+      klineCache.set(code, rows);
+      renderKlinePane(pane, name, rows, rows.length - 1);
+    })
+    .catch((error) => {
+      pane.innerHTML = '<div class="kline-empty">K线加载失败：' + escapeHtml(error.message || String(error)) + '</div>';
+    });
+}
+
+function fetchEastmoneyKline(code) {
+  return new Promise((resolve, reject) => {
+    const callbackName = 'emKline_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('请求超时'));
+    }, 12000);
+    function cleanup() {
+      window.clearTimeout(timer);
+      delete window[callbackName];
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    }
+    window[callbackName] = (payload) => {
+      cleanup();
+      try {
+        const rows = parseEastmoneyKline(payload);
+        if (!rows.length) {
+          reject(new Error('暂无K线数据'));
+          return;
+        }
+        resolve(rows.slice(-60));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    const script = document.createElement('script');
+    const params = new URLSearchParams({
+      secid: eastmoneySecid(code),
+      fields1: 'f1,f2,f3,f4,f5,f6',
+      fields2: 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
+      klt: '101',
+      fqt: '0',
+      beg: '0',
+      end: '20500101',
+      lmt: '60',
+      cb: callbackName
+    });
+    script.src = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?' + params.toString();
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('东方财富K线接口连接失败'));
+    };
+    document.body.appendChild(script);
+  });
+}
+
+function eastmoneySecid(code) {
+  const normalized = String(code || '').replace(/\\D/g, '');
+  const market = /^[569]/.test(normalized) ? '1' : '0';
+  return market + '.' + normalized;
+}
+
+function parseEastmoneyKline(payload) {
+  const klines = (((payload || {}).data || {}).klines || []);
+  return klines.map((item) => {
+    const fields = String(item).split(',');
+    return {
+      date: fields[0],
+      open: numberValue(fields[1]),
+      close: numberValue(fields[2]),
+      high: numberValue(fields[3]),
+      low: numberValue(fields[4]),
+      volume: numberValue(fields[5]),
+      amount: numberValue(fields[6]),
+      changePct: numberValue(fields[8]),
+      turnover: numberValue(fields[10])
+    };
+  }).filter((row) => row.date && isFinite(row.open) && isFinite(row.close) && isFinite(row.high) && isFinite(row.low));
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function movingAverage(rows, index, days) {
+  if (index + 1 < days) {
+    return null;
+  }
+  let sum = 0;
+  for (let offset = index - days + 1; offset <= index; offset += 1) {
+    sum += rows[offset].close;
+  }
+  return sum / days;
+}
+
+function renderKlinePane(pane, name, rows, selectedIndex) {
+  if (!rows.length) {
+    pane.innerHTML = '<div class="kline-empty">暂无K线数据</div>';
+    return;
+  }
+  selectedIndex = Math.max(0, Math.min(rows.length - 1, selectedIndex));
+  pane.__klineRows = rows;
+  const selected = rows[selectedIndex];
+  const values = rows.flatMap((row) => [row.high, row.low]);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const padding = Math.max((rawMax - rawMin) * 0.08, 0.01);
+  const minPrice = rawMin - padding;
+  const maxPrice = rawMax + padding;
+  const width = 448;
+  const priceTop = 38;
+  const priceLeft = 58;
+  const priceWidth = 346;
+  const priceHeight = 230;
+  const volumeTop = 310;
+  const amountTop = 384;
+  const barHeight = 48;
+  const step = priceWidth / Math.max(rows.length - 1, 1);
+  const barWidth = Math.max(3, Math.min(8, step * 0.56));
+  const y = (value) => priceTop + (maxPrice - value) * priceHeight / (maxPrice - minPrice);
+  const x = (index) => priceLeft + index * step;
+  const ticks = priceTicks(minPrice, maxPrice, 6);
+  const maxVolume = Math.max(...rows.map((row) => row.volume), 1);
+  const maxAmount = Math.max(...rows.map((row) => row.amount), 1);
+  const candles = rows.map((row, index) => {
+    const cx = x(index);
+    const up = row.close >= row.open;
+    const color = up ? '#d93025' : '#188038';
+    const top = y(Math.max(row.open, row.close));
+    const bottom = y(Math.min(row.open, row.close));
+    const bodyHeight = Math.max(2, bottom - top);
+    return '<g class="kline-day" data-index="' + index + '" onclick="selectKlineDate(this)">' +
+      '<line x1="' + cx.toFixed(2) + '" y1="' + y(row.high).toFixed(2) + '" x2="' + cx.toFixed(2) + '" y2="' + y(row.low).toFixed(2) + '" stroke="' + color + '" stroke-width="1.2"/>' +
+      '<rect x="' + (cx - barWidth / 2).toFixed(2) + '" y="' + top.toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + bodyHeight.toFixed(2) + '" fill="' + (up ? color : '#fff') + '" stroke="' + color + '" stroke-width="1"/>' +
+      '<rect x="' + (cx - step / 2).toFixed(2) + '" y="' + priceTop + '" width="' + step.toFixed(2) + '" height="' + (priceHeight + 128) + '" fill="transparent"/>' +
+      '</g>';
+  }).join('');
+  const ma5 = maPolyline(rows, 5, x, y);
+  const ma10 = maPolyline(rows, 10, x, y);
+  const ma20 = maPolyline(rows, 20, x, y);
+  const volumeBars = rows.map((row, index) => {
+    const cx = x(index);
+    const height = Math.max(1, row.volume / maxVolume * barHeight);
+    const color = row.close >= row.open ? '#d93025' : '#188038';
+    return '<rect x="' + (cx - barWidth / 2).toFixed(2) + '" y="' + (volumeTop + barHeight - height).toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + height.toFixed(2) + '" fill="' + color + '" opacity=".72"/>';
+  }).join('');
+  const amountBars = rows.map((row, index) => {
+    const cx = x(index);
+    const height = Math.max(1, row.amount / maxAmount * barHeight);
+    const color = row.close >= row.open ? '#d93025' : '#188038';
+    return '<rect x="' + (cx - barWidth / 2).toFixed(2) + '" y="' + (amountTop + barHeight - height).toFixed(2) + '" width="' + barWidth.toFixed(2) + '" height="' + height.toFixed(2) + '" fill="' + color + '" opacity=".52"/>';
+  }).join('');
+  const selectedX = x(selectedIndex);
+  const selectedY = y(selected.close);
+  pane.innerHTML =
+    '<div class="kline-title"><strong>' + escapeHtml(name) + ' · 近60日K线</strong><span>日K · MA5 / MA10 / MA20</span></div>' +
+    '<div class="kline-metrics">' +
+      metric('选中日期', selected.date) + metric('开', priceText(selected.open), 'red') + metric('收', priceText(selected.close), selected.close >= selected.open ? 'red' : 'green') +
+      metric('高', priceText(selected.high), 'red') + metric('低', priceText(selected.low), 'green') + metric('成交量', compactVolume(selected.volume)) +
+      metric('换手率', percentText(selected.turnover)) + metric('流通市值', '--') + metric('动态PE', '--') +
+    '</div>' +
+    '<svg class="kline-svg" viewBox="0 0 ' + width + ' 540" role="img" aria-label="' + escapeHtml(name) + '近60日K线图">' +
+      '<text class="kline-ma ma5-label" x="16" y="22">MA5 ' + maLabel(rows, selectedIndex, 5) + '</text>' +
+      '<text class="kline-ma ma10-label" x="94" y="22">MA10 ' + maLabel(rows, selectedIndex, 10) + '</text>' +
+      '<text class="kline-ma ma20-label" x="184" y="22">MA20 ' + maLabel(rows, selectedIndex, 20) + '</text>' +
+      ticks.map((tick) => '<line class="kline-grid" x1="' + priceLeft + '" y1="' + y(tick).toFixed(2) + '" x2="' + (priceLeft + priceWidth) + '" y2="' + y(tick).toFixed(2) + '"/><text class="kline-price" x="' + (priceLeft - 12) + '" y="' + (y(tick) + 4).toFixed(2) + '" text-anchor="end">' + priceText(tick) + '</text>').join('') +
+      '<line class="kline-axis" x1="' + priceLeft + '" y1="' + priceTop + '" x2="' + priceLeft + '" y2="' + (priceTop + priceHeight) + '"/>' +
+      '<line class="kline-axis" x1="' + priceLeft + '" y1="' + (priceTop + priceHeight) + '" x2="' + (priceLeft + priceWidth) + '" y2="' + (priceTop + priceHeight) + '"/>' +
+      candles + ma5 + ma10 + ma20 +
+      '<line class="kline-cross" x1="' + selectedX.toFixed(2) + '" y1="' + priceTop + '" x2="' + selectedX.toFixed(2) + '" y2="' + (amountTop + barHeight) + '"/>' +
+      '<line class="kline-cross" x1="' + priceLeft + '" y1="' + selectedY.toFixed(2) + '" x2="' + (priceLeft + priceWidth) + '" y2="' + selectedY.toFixed(2) + '"/>' +
+      '<circle cx="' + selectedX.toFixed(2) + '" cy="' + selectedY.toFixed(2) + '" r="4" fill="#d93025" stroke="#fff" stroke-width="2"/>' +
+      '<text class="kline-subtitle" x="16" y="' + (volumeTop - 14) + '">成交量</text>' + volumeBars +
+      '<text class="kline-subtitle" x="16" y="' + (amountTop - 14) + '">成交额</text>' + amountBars +
+      '<text class="kline-date" x="' + priceLeft + '" y="522">' + rows[0].date.slice(5) + '</text>' +
+      '<text class="kline-date" x="' + (priceLeft + priceWidth / 2) + '" y="522" text-anchor="middle">' + rows[Math.floor(rows.length / 2)].date.slice(5) + '</text>' +
+      '<text class="kline-date" x="' + (priceLeft + priceWidth) + '" y="522" text-anchor="end">' + rows[rows.length - 1].date.slice(5) + '</text>' +
+    '</svg>';
+}
+
+function maPolyline(rows, days, x, y) {
+  const points = rows.map((row, index) => {
+    const value = movingAverage(rows, index, days);
+    return value === null ? null : x(index).toFixed(2) + ',' + y(value).toFixed(2);
+  }).filter(Boolean);
+  if (points.length < 2) {
+    return '';
+  }
+  return '<polyline class="kline-ma-line ma' + days + '-line" points="' + points.join(' ') + '"/>';
+}
+
+function maLabel(rows, index, days) {
+  const value = movingAverage(rows, index, days);
+  return value === null ? '--' : priceText(value);
+}
+
+function priceTicks(minPrice, maxPrice, count) {
+  const ticks = [];
+  for (let index = 0; index < count; index += 1) {
+    ticks.push(maxPrice - (maxPrice - minPrice) * index / (count - 1));
+  }
+  return ticks;
+}
+
+function selectKlineDate(node) {
+  const pane = node.closest('.kline-pane');
+  if (!pane || !pane.__klineRows) {
+    return;
+  }
+  renderKlinePane(pane, pane.dataset.stockName || '个股', pane.__klineRows, Number(node.dataset.index));
+}
+
+function metric(label, value, tone) {
+  return '<div><span>' + escapeHtml(label) + '</span><strong class="' + (tone || '') + '">' + escapeHtml(value) + '</strong></div>';
+}
+
+function priceText(value) {
+  return Number(value).toFixed(2);
+}
+
+function percentText(value) {
+  return value ? Number(value).toFixed(2) + '%' : '--';
+}
+
+function compactVolume(value) {
+  if (!value) return '--';
+  if (value >= 10000) return (value / 10000).toFixed(1) + '万手';
+  return Math.round(value) + '手';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
 }
 
 function handleLegendKey(event, legendItem) {
@@ -531,6 +808,33 @@ dd { margin: 4px 0 0; font-weight: 700; }
 .stock-chart-button { border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #005a9e; cursor: pointer; font: inherit; font-size: 12px; padding: 5px 8px; white-space: nowrap; }
 .stock-chart-button:hover { border-color: #0078d4; background: #eef6ff; }
 .stock-table { font-size: 12px; }
+.stock-linked-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(360px, .95fr); gap: 14px; align-items: stretch; }
+.stock-trend-pane, .kline-pane { min-width: 0; }
+.kline-pane { border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; padding: 14px; min-height: 460px; }
+.kline-empty, .kline-loading { min-height: 430px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; }
+.kline-title { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 10px; }
+.kline-title strong { font-size: 16px; color: var(--text); }
+.kline-title span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.kline-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; padding: 10px; border: 1px solid #e6eaf1; border-radius: 6px; background: #fbfcfe; margin-bottom: 10px; }
+.kline-metrics div { min-width: 0; }
+.kline-metrics span { display: block; color: var(--muted); font-size: 11px; line-height: 1.25; }
+.kline-metrics strong { display: block; color: var(--text); font-size: 12.5px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kline-metrics .red { color: #d93025; }
+.kline-metrics .green { color: #188038; }
+.kline-svg { border: 1px solid #e6eaf1; border-radius: 6px; background: #fbfcfe; }
+.kline-grid { stroke: #edf0f5; stroke-width: 1; }
+.kline-axis { stroke: #cbd5e1; stroke-width: 1; }
+.kline-price, .kline-date, .kline-subtitle { fill: #64748b; font-size: 11px; }
+.kline-ma { font-size: 11px; font-weight: 600; }
+.ma5-label { fill: #f59e0b; }
+.ma10-label { fill: #2563eb; }
+.ma20-label { fill: #7c3aed; }
+.kline-ma-line { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.ma5-line { stroke: #f59e0b; }
+.ma10-line { stroke: #2563eb; }
+.ma20-line { stroke: #7c3aed; }
+.kline-cross { stroke: #64748b; stroke-width: 1; stroke-dasharray: 4 4; }
+.kline-day { cursor: crosshair; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 8px 6px; border-bottom: 1px solid #eceff3; text-align: right; white-space: nowrap; }
 th:nth-child(2), td:nth-child(2), .status-section td:last-child { text-align: left; }
@@ -558,7 +862,7 @@ svg { width: 100%; height: auto; display: block; }
 .daily-point:hover { r: 4; opacity: 1; }
 .last-return-label { font-size: 11.5px; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .quality { color: var(--muted); line-height: 1.7; }
-@media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
+@media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .stock-linked-layout { grid-template-columns: 1fr; } .kline-pane { min-height: 420px; } .shell { padding: 16px; } }
 """
 
 
@@ -1728,7 +2032,9 @@ def _snapshot_histories_for_constituents(
         history = snapshot_by_code.get(_normalize_stock_code(stock.code))
         if history is None or history.empty:
             continue
-        histories[stock.name] = history.loc[:, ["date", "close"]].copy()
+        selected = history.loc[:, ["date", "close"]].copy()
+        selected["code"] = _normalize_stock_code(stock.code)
+        histories[stock.name] = selected
     return histories
 
 

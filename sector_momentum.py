@@ -24,6 +24,7 @@ class TrendPoint:
 class TrendSeries:
     name: str
     points: list[TrendPoint]
+    code: str | None = None
 
 
 def compute_return(history: pd.DataFrame, period: int) -> float | None:
@@ -87,7 +88,13 @@ def build_trend_series(
     for name in selected_names:
         if name not in histories:
             continue
-        prepared = _prepare_history(histories[name]).tail(lookback)
+        raw_history = histories[name]
+        code = None
+        if "code" in raw_history.columns:
+            codes = raw_history["code"].dropna().map(str)
+            if not codes.empty:
+                code = str(codes.iloc[-1])
+        prepared = _prepare_history(raw_history).tail(lookback)
         if prepared.empty:
             continue
 
@@ -99,7 +106,7 @@ def build_trend_series(
             TrendPoint(date=str(row["date"]), return_pct=round((float(row["close"]) / base - 1) * 100, 2))
             for _, row in prepared.iterrows()
         ]
-        series.append(TrendSeries(name=name, points=points))
+        series.append(TrendSeries(name=name, points=points, code=code))
     return series
 
 

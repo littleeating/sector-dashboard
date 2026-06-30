@@ -246,6 +246,60 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(html.count('class="last-return-label"'), 1)
         self.assertIn(">+12.34%</text>", html)
 
+    def test_stock_chart_panel_includes_linked_kline_shell_and_stock_code(self):
+        context = {
+            "data_date": "2026-06-26",
+            "generated_at": "2026-06-28 16:30:00",
+            "periods": [5],
+            "industry_rankings": {5: []},
+            "concept_rankings": {5: []},
+            "industry_count": 0,
+            "concept_count": 0,
+            "trend_series": [],
+            "period_chart_series": {"industry": {5: []}, "concept": {5: []}},
+            "sector_stock_chart_series": {
+                "industry": {
+                    5: {
+                        "SectorA": [
+                            TrendSeries(
+                                name="FastStock",
+                                points=[TrendPoint("2026-06-25", 0.0), TrendPoint("2026-06-26", 12.0)],
+                                code="600001",
+                            )
+                        ]
+                    }
+                }
+            },
+            "source_statuses": [],
+            "source_labels": {"industry": "来源", "concept": "来源"},
+            "quality": {},
+        }
+
+        html = render_dashboard(context)
+
+        self.assertIn('class="stock-linked-layout"', html)
+        self.assertIn('class="kline-pane"', html)
+        self.assertIn('data-stock-code="600001"', html)
+        self.assertIn("loadKlineForLegend", html)
+        self.assertIn("MA5", html)
+
+    def test_stock_snapshot_histories_preserve_stock_code_for_kline_linking(self):
+        from sector_dashboard import _snapshot_histories_for_constituents
+
+        history = pd.DataFrame(
+            [
+                {"code": "600001", "name": "FastStock", "date": "2026-06-25", "close": 10},
+                {"code": "600001", "name": "FastStock", "date": "2026-06-26", "close": 12},
+            ]
+        )
+
+        histories = _snapshot_histories_for_constituents(
+            constituents=[StockInfo("FastStock", "600001")],
+            snapshot_by_code={"600001": history},
+        )
+
+        self.assertEqual(histories["FastStock"]["code"].tolist(), ["600001", "600001"])
+
     def test_svg_chart_keeps_daily_ticks_but_thins_crowded_date_labels(self):
         points = [
             TrendPoint(date.strftime("%Y-%m-%d"), float(index))
