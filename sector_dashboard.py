@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -17,6 +18,7 @@ from sector_momentum import RankingRow, TrendPoint, TrendSeries, build_trend_ser
 
 DEFAULT_PERIODS = [5, 10, 20, 30, 45, 60]
 DEFAULT_TOP_N = 20
+DEFAULT_STOCK_TOP_N = 10
 LIVE_CACHE_VERSION = "akshare-board-name-v2"
 SOURCE_LABELS = {
     "industry": "东方财富行业板块（AKShare）",
@@ -51,6 +53,7 @@ def render_dashboard(context: dict[str, Any]) -> str:
     source_labels = context.get("source_labels", SOURCE_LABELS)
     source_statuses = context.get("source_statuses", [])
     quality = context.get("quality", {})
+    stock_top_n = int(context.get("stock_top_n", DEFAULT_STOCK_TOP_N))
 
     return "\n".join(
         [
@@ -72,8 +75,8 @@ def render_dashboard(context: dict[str, Any]) -> str:
             "</div>",
             _render_chart_panels(context.get("trend_series", []), period_chart_series, sector_stock_chart_series),
             "</section>",
-            _render_rankings("行业板块", "industry", source_labels.get("industry", ""), industry_rankings, periods, sector_stock_rankings),
-            _render_rankings("概念板块", "concept", source_labels.get("concept", ""), concept_rankings, periods, sector_stock_rankings),
+            _render_rankings("行业板块", "industry", source_labels.get("industry", ""), industry_rankings, periods, sector_stock_rankings, stock_top_n),
+            _render_rankings("概念板块", "concept", source_labels.get("concept", ""), concept_rankings, periods, sector_stock_rankings, stock_top_n),
             _render_statuses(source_statuses, quality),
             "</main>",
             _interaction_script(),
@@ -249,6 +252,7 @@ def _render_rankings(
     rankings: dict[int, list[RankingRow]],
     periods: list[int],
     sector_stock_rankings: dict[str, dict[int, dict[str, list[RankingRow]]]] | None = None,
+    stock_top_n: int = DEFAULT_STOCK_TOP_N,
 ) -> str:
     cards = []
     for period in periods:
@@ -270,7 +274,7 @@ def _render_rankings(
                     f'onkeydown="handleSectorRowKey(event, this)">'
                     f"<td>{rank}</td><td>{html.escape(row.name)}</td><td>{row.return_pct:.2f}%</td><td>{row.latest_close:.2f}</td></tr>"
                 )
-                rendered_rows.append(_render_stock_detail_row(panel_key, stock_rows))
+                rendered_rows.append(_render_stock_detail_row(panel_key, stock_rows, stock_top_n))
             body = "\n".join(rendered_rows)
         else:
             body = '<tr><td colspan="4" class="empty">暂无足够历史数据</td></tr>'
@@ -299,7 +303,7 @@ def _render_rankings(
 """
 
 
-def _render_stock_detail_row(panel_key: str, stock_rows: list[RankingRow]) -> str:
+def _render_stock_detail_row(panel_key: str, stock_rows: list[RankingRow], stock_top_n: int = DEFAULT_STOCK_TOP_N) -> str:
     chart_key = "stock-" + panel_key
     if stock_rows:
         rows = "\n".join(
@@ -313,7 +317,7 @@ def _render_stock_detail_row(panel_key: str, stock_rows: list[RankingRow]) -> st
   <td colspan="4">
     <div class="stock-detail-body">
       <div class="stock-detail-heading">
-        <strong>板块内涨幅前20名股票</strong>
+        <strong>板块内涨幅前{stock_top_n}名股票</strong>
         <button class="stock-chart-button" type="button" data-stock-chart-key="{html.escape(chart_key, quote=True)}" onclick="showStockChart(this.dataset.stockChartKey)">查看股票趋势图</button>
       </div>
       <table class="stock-table">
@@ -634,6 +638,7 @@ def generate_live_dashboard(
     max_workers: int,
     min_delay: float,
     max_delay: float,
+    stock_top_n: int = DEFAULT_STOCK_TOP_N,
     board_limit: int = 0,
     stock_sector_limit: int = 0,
     stock_constituent_limit: int = 0,
@@ -642,14 +647,18 @@ def generate_live_dashboard(
     board_list_timeout: float = 30.0,
     stock_fetch_timeout: float = 30.0,
     data_source: str = "eastmoney",
+    stock_data_source: str | None = None,
     sina_board_pool_limit: int = 40,
     cache_only: bool = False,
+    board_cache_only: bool = False,
 ) -> Path:
+    stock_data_source = stock_data_source or data_source
     if data_source == "sina":
         return generate_sina_dashboard(
             output,
             periods=periods,
             top_n=top_n,
+            stock_top_n=stock_top_n,
             cache_dir=cache_dir,
             max_workers=max_workers,
             min_delay=min_delay,
@@ -669,7 +678,8 @@ def generate_live_dashboard(
     # max_workers is validated and reported, but requests stay sequential in v1 to respect source limits.
     policy = AccessPolicy(max_workers=max_workers, min_delay=min_delay, max_delay=max_delay)
     cache = CacheStore(cache_dir, version=LIVE_CACHE_VERSION)
-    status = SourceStatus(source="eastmoney")
+    status_source = "eastmoney" if stock_data_source == "eastmoney" else "eastmoney+sina"
+    status = SourceStatus(source=status_source)
     ak = load_akshare()
     today = datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
@@ -705,6 +715,7 @@ def generate_live_dashboard(
         latest_date=today,
         status=status,
         policy=policy,
+        cache_only=cache_only or board_cache_only,
         fetcher_factory=lambda board: lambda: _fetch_eastmoney_board_history(
             board,
             start_date=start_date,
@@ -719,6 +730,7 @@ def generate_live_dashboard(
         latest_date=today,
         status=status,
         policy=policy,
+        cache_only=cache_only,
         fetcher_factory=lambda board: lambda: _fetch_eastmoney_board_history(
             board,
             start_date=start_date,
@@ -732,21 +744,45 @@ def generate_live_dashboard(
         concept_histories=concept_histories,
         periods=periods,
         top_n=top_n,
+        stock_top_n=stock_top_n,
         source_statuses=[status],
         quality={"max_workers": policy.max_workers},
     )
+    stock_boards_by_category = {
+        "industry": {board.name: board for board in industry_boards},
+        "concept": {board.name: board for board in concept_boards},
+    }
+    stock_constituent_source = "eastmoney"
+    if stock_data_source == "sina":
+        stock_constituent_source = "sina"
+        sina_industry_spot = fetch_with_policy(
+            lambda: _fetch_sina_sector_spot("industry", timeout_seconds=stock_fetch_timeout),
+            policy=policy,
+            status=status,
+        )
+        sina_concept_spot = fetch_with_policy(
+            lambda: _fetch_sina_sector_spot("concept", timeout_seconds=stock_fetch_timeout),
+            policy=policy,
+            status=status,
+        )
+        sina_stock_spot = pd.concat([sina_industry_spot, sina_concept_spot], ignore_index=True)
+        stock_boards_by_category = {
+            "industry": _map_boards_to_sina_labels(industry_boards, sina_stock_spot),
+            "concept": _map_boards_to_sina_labels(concept_boards, sina_stock_spot),
+        }
+    stock_cache = cache
+    if stock_data_source == "sina":
+        stock_cache = CacheStore(cache_dir, version=f"{LIVE_CACHE_VERSION}-sina-v1")
+
     sector_stock_histories = _load_sector_stock_histories(
-        cache=cache,
+        cache=stock_cache,
         akshare_client=ak,
         periods=periods,
         rankings_by_category={
             "industry": base_context["industry_rankings"],
             "concept": base_context["concept_rankings"],
         },
-        boards_by_category={
-            "industry": {board.name: board for board in industry_boards},
-            "concept": {board.name: board for board in concept_boards},
-        },
+        boards_by_category=stock_boards_by_category,
         latest_date=today,
         start_date=start_date,
         end_date=end_date,
@@ -757,12 +793,15 @@ def generate_live_dashboard(
         stock_candidate_limit=stock_candidate_limit,
         request_budget=request_budget,
         stock_fetch_timeout=stock_fetch_timeout,
+        source=stock_constituent_source,
+        stock_history_source=stock_data_source,
     )
     context = _build_context(
         industry_histories=industry_histories,
         concept_histories=concept_histories,
         periods=periods,
         top_n=top_n,
+        stock_top_n=stock_top_n,
         source_statuses=[status],
         quality={
             "max_workers": policy.max_workers,
@@ -770,6 +809,8 @@ def generate_live_dashboard(
             "stock_constituent_limit": stock_constituent_limit,
             "stock_candidate_limit": stock_candidate_limit,
             "request_budget": request_budget,
+            "data_source": "eastmoney",
+            "stock_data_source": stock_data_source,
         },
         sector_stock_histories=sector_stock_histories,
     )
@@ -788,6 +829,7 @@ def generate_sina_dashboard(
     max_workers: int,
     min_delay: float,
     max_delay: float,
+    stock_top_n: int = DEFAULT_STOCK_TOP_N,
     board_limit: int = 0,
     stock_sector_limit: int = 0,
     stock_constituent_limit: int = 0,
@@ -849,6 +891,7 @@ def generate_sina_dashboard(
         concept_histories=aggregated["concept"],
         periods=periods,
         top_n=top_n,
+        stock_top_n=stock_top_n,
         source_statuses=[status],
         quality={
             "max_workers": policy.max_workers,
@@ -876,6 +919,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", default="output/sector_dashboard/index.html", help="输出 HTML 路径。")
     parser.add_argument("--sample", action="store_true", help="使用内置样例数据离线生成网页。")
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N, help="每个周期展示前 N 名。")
+    parser.add_argument("--stock-top-n", type=int, default=DEFAULT_STOCK_TOP_N, help="每个板块展开显示的涨幅前 N 名股票。")
     parser.add_argument("--periods", default="5,10,20,30,45,60", help="逗号分隔的交易日周期。")
     parser.add_argument("--cache-dir", default="cache/sector_dashboard", help="缓存目录。")
     parser.add_argument("--max-workers", type=int, default=1, help="外部请求并行度，硬上限为 2；v1 仍顺序请求。")
@@ -889,8 +933,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--board-list-timeout", type=float, default=30.0, help="板块清单接口单次等待秒数；超时后使用缓存兜底。")
     parser.add_argument("--stock-fetch-timeout", type=float, default=30.0, help="成分股和个股历史接口单次等待秒数；超时后跳过并继续。")
     parser.add_argument("--data-source", choices=["eastmoney", "sina"], default="eastmoney", help="行情数据源。")
+    parser.add_argument("--stock-data-source", choices=["eastmoney", "sina"], default=None, help="个股历史行情数据源；默认跟随 data-source。")
     parser.add_argument("--sina-board-pool-limit", type=int, default=40, help="新浪模式每类按当日涨跌幅进入候选池的板块数量。")
     parser.add_argument("--cache-only", action="store_true", help="只使用已有缓存生成页面，不新增外部请求。")
+    parser.add_argument("--board-cache-only", action="store_true", help="只对板块历史使用缓存；股票数据仍按参数抓取或读取。")
     return parser.parse_args(argv)
 
 
@@ -904,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             periods=periods,
             top_n=args.top_n,
+            stock_top_n=args.stock_top_n,
             cache_dir=args.cache_dir,
             max_workers=args.max_workers,
             min_delay=args.min_delay,
@@ -916,8 +963,10 @@ def main(argv: list[str] | None = None) -> int:
             board_list_timeout=args.board_list_timeout,
             stock_fetch_timeout=args.stock_fetch_timeout,
             data_source=args.data_source,
+            stock_data_source=args.stock_data_source,
             sina_board_pool_limit=args.sina_board_pool_limit,
             cache_only=args.cache_only,
+            board_cache_only=args.board_cache_only,
         )
     print(f"板块动量看板已生成: {output.resolve()}")
     return 0
@@ -929,10 +978,12 @@ def _build_context(
     concept_histories: dict[str, pd.DataFrame],
     periods: list[int],
     top_n: int,
+    stock_top_n: int | None = None,
     source_statuses: list[SourceStatus],
     quality: dict[str, Any],
     sector_stock_histories: dict[str, dict[str, dict[str, pd.DataFrame]]] | None = None,
 ) -> dict[str, Any]:
+    stock_top_n = top_n if stock_top_n is None else stock_top_n
     industry_rankings, industry_quality = rank_sectors(industry_histories, periods, top_n)
     concept_rankings, concept_quality = rank_sectors(concept_histories, periods, top_n)
     selected_names = _selected_trend_names(industry_rankings, concept_rankings)
@@ -946,7 +997,7 @@ def _build_context(
         sector_stock_histories or {"industry": {}, "concept": {}},
         {"industry": industry_rankings, "concept": concept_rankings},
         periods,
-        top_n,
+        stock_top_n,
     )
     data_date = _latest_data_date(all_histories)
     merged_quality = {
@@ -961,6 +1012,7 @@ def _build_context(
         "periods": periods,
         "industry_rankings": industry_rankings,
         "concept_rankings": concept_rankings,
+        "stock_top_n": stock_top_n,
         "industry_count": len(industry_histories),
         "concept_count": len(concept_histories),
         "trend_series": trend_series,
@@ -1202,21 +1254,30 @@ def _load_histories(
     status: SourceStatus,
     policy: AccessPolicy,
     fetcher_factory: Any,
+    cache_only: bool = False,
 ) -> dict[str, pd.DataFrame]:
     histories: dict[str, pd.DataFrame] = {}
     for board in boards:
         if status.limited:
             break
         try:
-            histories[board.name] = get_or_fetch_history(
-                cache=cache,
-                category=category,
-                name=board.name,
-                latest_date=latest_date,
-                fetcher=fetcher_factory(board),
-                policy=policy,
-                status=status,
-            )
+            if cache_only:
+                cached = cache.read_history(category, board.name)
+                if cached is None:
+                    continue
+                history, _ = cached
+                status.cache_hits += 1
+                histories[board.name] = history
+            else:
+                histories[board.name] = get_or_fetch_history(
+                    cache=cache,
+                    category=category,
+                    name=board.name,
+                    latest_date=latest_date,
+                    fetcher=fetcher_factory(board),
+                    policy=policy,
+                    status=status,
+                )
         except Exception as exc:
             status.messages.append(f"{board.name}: {exc}")
     return histories
@@ -1240,8 +1301,10 @@ def _load_sector_stock_histories(
     request_budget: int = 0,
     stock_fetch_timeout: float = 30.0,
     source: str = "eastmoney",
+    stock_history_source: str | None = None,
     cache_only: bool = False,
 ) -> dict[str, dict[str, dict[str, pd.DataFrame]]]:
+    stock_history_source = stock_history_source or source
     if stock_sector_limit < 0:
         raise ValueError("stock_sector_limit must not be negative")
     if stock_constituent_limit < 0:
@@ -1317,7 +1380,7 @@ def _load_sector_stock_histories(
                             end_date=end_date,
                             akshare_client=akshare_client,
                             timeout_seconds=stock_fetch_timeout,
-                            source=source,
+                            source=stock_history_source,
                         ),
                         policy=policy,
                         status=status,
@@ -1362,6 +1425,105 @@ def _select_sina_board_pool(spot: pd.DataFrame, limit: int) -> list[BoardInfo]:
     if limit:
         sorted_spot = sorted_spot.head(limit)
     return [BoardInfo(str(row["板块"]), str(row["label"])) for _, row in sorted_spot.iterrows()]
+
+
+def _map_boards_to_sina_labels(boards: list[BoardInfo], spot: pd.DataFrame) -> dict[str, BoardInfo]:
+    if "板块" not in spot.columns or "label" not in spot.columns:
+        return {}
+    label_by_name = {
+        str(row["板块"]): str(row["label"])
+        for _, row in spot.dropna(subset=["板块", "label"]).iterrows()
+    }
+    return {
+        board.name: BoardInfo(board.name, label_by_name[board.name])
+        for board in boards
+        if board.name in label_by_name
+    }
+
+
+def _map_boards_to_sina_labels(boards: list[BoardInfo], spot: pd.DataFrame) -> dict[str, BoardInfo]:
+    board_column = next((column for column in ("板块", "겼욥") if column in spot.columns), None)
+    if board_column is None or "label" not in spot.columns:
+        return {}
+
+    label_by_name: dict[str, str] = {}
+    normalized: dict[str, list[tuple[str, str]]] = {}
+    for _, row in spot.dropna(subset=[board_column, "label"]).iterrows():
+        name = str(row[board_column])
+        label = str(row["label"])
+        label_by_name[name] = label
+        normalized.setdefault(_normalize_sina_board_name(name), []).append((name, label))
+
+    mapped: dict[str, BoardInfo] = {}
+    for board in boards:
+        if board.name in label_by_name:
+            mapped[board.name] = BoardInfo(board.name, label_by_name[board.name])
+            continue
+
+        board_key = _normalize_sina_board_name(board.name)
+        candidates = normalized.get(board_key, [])
+        if not candidates:
+            candidates = _contained_sina_board_candidates(board_key, normalized)
+        if not candidates:
+            alias_name = _sina_board_alias_name(board_key)
+            if alias_name and alias_name in label_by_name:
+                candidates = [(alias_name, label_by_name[alias_name])]
+        if len(candidates) == 1:
+            mapped[board.name] = BoardInfo(board.name, candidates[0][1])
+    return mapped
+
+
+def _normalize_sina_board_name(name: str) -> str:
+    normalized = re.sub(r"[\s,，、（）()·\-_/]", "", str(name).strip())
+    normalized = re.sub(r"(概念|板块)$", "", normalized)
+    normalized = re.sub(r"[ⅠⅡⅢIV]+$", "", normalized)
+    return normalized.upper()
+
+
+def _contained_sina_board_candidates(
+    board_key: str,
+    normalized: dict[str, list[tuple[str, str]]],
+) -> list[tuple[str, str]]:
+    if len(board_key) < 3:
+        return []
+    matches: list[tuple[str, str]] = []
+    for spot_key, candidates in normalized.items():
+        if len(spot_key) < 3:
+            continue
+        if board_key in spot_key or spot_key in board_key:
+            matches.extend(candidates)
+    return matches
+
+
+def _sina_board_alias_name(board_key: str) -> str | None:
+    aliases = [
+        (
+            (
+                "半导体",
+                "集成电路",
+                "芯片",
+                "分立器件",
+                "光学光电子",
+                "光学元件",
+                "印制电路",
+                "电子化学品",
+                "面板",
+                "元件",
+                "LED",
+                "其他电子",
+            ),
+            "计算机、通信和其他电子设备制造业",
+        ),
+        (("激光设备", "光伏加工设备"), "专用设备制造业"),
+        (("玻璃玻纤", "磨具磨料"), "非金属矿物制品业"),
+        (("无机盐",), "化学原料和化学制品制造业"),
+        (("房地产开发", "房地产服务"), "房地产业"),
+        (("虚拟机器人",), "机器人概念"),
+    ]
+    for needles, alias in aliases:
+        if any(needle.upper() in board_key for needle in needles):
+            return alias
+    return None
 
 
 def _seed_rankings_from_spot(
