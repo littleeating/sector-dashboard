@@ -243,6 +243,8 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(html.count('class="daily-point"'), 3)
         self.assertEqual(html.count('class="day-tick"'), 3)
         self.assertIn("<title>2026-06-26: 12.34%</title>", html)
+        self.assertEqual(html.count('class="last-return-label"'), 1)
+        self.assertIn(">+12.34%</text>", html)
 
     def test_svg_chart_keeps_daily_ticks_but_thins_crowded_date_labels(self):
         points = [

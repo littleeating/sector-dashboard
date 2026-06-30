@@ -185,6 +185,18 @@ def build_svg_chart(series: list[TrendSeries]) -> str:
             parts.append(
                 f'<circle class="daily-point" cx="{x:.2f}" cy="{y:.2f}" r="2.8" fill="{color}"><title>{html.escape(point.date)}: {point.return_pct:.2f}%</title></circle>'
             )
+        last_point = item.points[-1]
+        last_x = x_for_date(last_point.date)
+        last_y = y_at(last_point.return_pct)
+        label_on_left = last_x > width - pad_right - 80
+        label_x = last_x - 8 if label_on_left else last_x + 8
+        label_anchor = "end" if label_on_left else "start"
+        label_y = min(max(last_y - 8, pad_top + 10), height - pad_bottom - 8)
+        label_text = f"{last_point.return_pct:+.2f}%"
+        parts.append(
+            f'<text class="last-return-label" x="{label_x:.2f}" y="{label_y:.2f}" '
+            f'text-anchor="{label_anchor}" fill="{color}">{html.escape(label_text)}</text>'
+        )
         parts.append("</g>")
         legend_x = pad_left + (index % 5) * 176
         row_y = legend_y + (index // 5) * 20
@@ -544,6 +556,7 @@ svg { width: 100%; height: auto; display: block; }
 .day-tick { stroke: #9aa0a6; stroke-width: 1; }
 .daily-point { stroke: #fff; stroke-width: 1.2; opacity: .92; }
 .daily-point:hover { r: 4; opacity: 1; }
+.last-return-label { font-size: 11.5px; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .quality { color: var(--muted); line-height: 1.7; }
 @media (max-width: 900px) { .hero, .chart-heading, .section-title { display: block; } .meta { margin-top: 16px; min-width: 0; } .ranking-grid { grid-template-columns: 1fr; } .shell { padding: 16px; } }
 """
