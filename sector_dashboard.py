@@ -500,7 +500,7 @@ function loadKlineForLegend(panel, legendItem) {
     renderKlinePane(pane, name, cached, cached.length - 1);
     return;
   }
-  fetchEastmoneyKline(code)
+  fetchLocalKline(code)
     .then((rows) => {
       klineCache.set(code, rows);
       renderKlinePane(pane, name, rows, rows.length - 1);
@@ -510,58 +510,36 @@ function loadKlineForLegend(panel, legendItem) {
     });
 }
 
-function fetchEastmoneyKline(code) {
-  return new Promise((resolve, reject) => {
-    const callbackName = 'emKline_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
-    const timer = window.setTimeout(() => {
-      cleanup();
-      reject(new Error('请求超时'));
-    }, 12000);
-    function cleanup() {
-      window.clearTimeout(timer);
-      delete window[callbackName];
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
+function fetchLocalKline(code) {
+  return fetch('data/kline/' + encodeURIComponent(code) + '.json', { cache: 'force-cache' })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error('本地K线快照不存在');
       }
-    }
-    window[callbackName] = (payload) => {
-      cleanup();
-      try {
-        const rows = parseEastmoneyKline(payload);
-        if (!rows.length) {
-          reject(new Error('暂无K线数据'));
-          return;
-        }
-        resolve(rows.slice(-60));
-      } catch (error) {
-        reject(error);
+      return response.json();
+    })
+    .then((payload) => {
+      const rows = (payload.rows || []).map((item) => {
+        const fields = item || {};
+        return {
+          date: String(fields.date || ''),
+          open: numberValue(fields.open),
+          close: numberValue(fields.close),
+          high: numberValue(fields.high),
+          low: numberValue(fields.low),
+          volume: numberValue(fields.volume),
+          amount: numberValue(fields.amount),
+          changePct: nullableNumber(fields.change_pct),
+          turnover: nullableNumber(fields.turnover),
+          floatMarketCap: nullableNumber(fields.float_market_cap),
+          peDynamic: nullableNumber(fields.pe_dynamic)
+        };
+      }).filter((row) => row.date && isFinite(row.open) && isFinite(row.close) && isFinite(row.high) && isFinite(row.low));
+      if (!rows.length) {
+        throw new Error('暂无本地K线数据');
       }
-    };
-    const script = document.createElement('script');
-    const params = new URLSearchParams({
-      secid: eastmoneySecid(code),
-      fields1: 'f1,f2,f3,f4,f5,f6',
-      fields2: 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
-      klt: '101',
-      fqt: '0',
-      beg: '0',
-      end: '20500101',
-      lmt: '60',
-      cb: callbackName
+      return rows.slice(-60);
     });
-    script.src = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?' + params.toString();
-    script.onerror = () => {
-      cleanup();
-      reject(new Error('东方财富K线接口连接失败'));
-    };
-    document.body.appendChild(script);
-  });
-}
-
-function eastmoneySecid(code) {
-  const normalized = String(code || '').replace(/\\D/g, '');
-  const market = /^[569]/.test(normalized) ? '1' : '0';
-  return market + '.' + normalized;
 }
 
 function parseEastmoneyKline(payload) {
@@ -585,6 +563,11 @@ function parseEastmoneyKline(payload) {
 function numberValue(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function nullableNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function movingAverage(rows, index, days) {
@@ -662,7 +645,7 @@ function renderKlinePane(pane, name, rows, selectedIndex) {
     '<div class="kline-metrics">' +
       metric('选中日期', selected.date) + metric('开', priceText(selected.open), 'red') + metric('收', priceText(selected.close), selected.close >= selected.open ? 'red' : 'green') +
       metric('高', priceText(selected.high), 'red') + metric('低', priceText(selected.low), 'green') + metric('成交量', compactVolume(selected.volume)) +
-      metric('换手率', percentText(selected.turnover)) + metric('流通市值', '--') + metric('动态PE', '--') +
+      metric('换手率', percentText(selected.turnover)) + metric('流通市值', compactMoney(selected.floatMarketCap)) + metric('动态PE', ratioText(selected.peDynamic)) +
     '</div>' +
     '<svg class="kline-svg" viewBox="0 0 ' + width + ' 540" role="img" aria-label="' + escapeHtml(name) + '近60日K线图">' +
       '<text class="kline-ma ma5-label" x="16" y="22">MA5 ' + maLabel(rows, selectedIndex, 5) + '</text>' +
@@ -731,6 +714,17 @@ function compactVolume(value) {
   if (!value) return '--';
   if (value >= 10000) return (value / 10000).toFixed(1) + '万手';
   return Math.round(value) + '手';
+}
+
+function compactMoney(value) {
+  if (!value) return '--';
+  if (value >= 100000000) return (value / 100000000).toFixed(1) + '亿';
+  if (value >= 10000) return (value / 10000).toFixed(1) + '万';
+  return Math.round(value).toString();
+}
+
+function ratioText(value) {
+  return value ? Number(value).toFixed(2) : '--';
 }
 
 function escapeHtml(value) {
@@ -1143,6 +1137,23 @@ def generate_live_dashboard(
     )
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    kline_targets = _collect_stock_kline_targets(context)
+    kline_data = _load_stock_kline_data(
+        cache=cache,
+        targets=kline_targets,
+        latest_date=today,
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+        policy=policy,
+        timeout_seconds=stock_fetch_timeout,
+        cache_only=cache_only,
+        request_budget=request_budget,
+        source="sina",
+    )
+    context["quality"]["stock_kline_targets"] = len(kline_targets)
+    context["quality"]["stock_kline_files"] = _write_kline_files(output_dir=output_path.parent, kline_data=kline_data)
+    context["quality"]["stock_kline_source"] = "sina"
     output_path.write_text(render_dashboard(context), encoding="utf-8")
     return output_path
 
@@ -1238,8 +1249,206 @@ def generate_sina_dashboard(
     }
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    kline_targets = _collect_stock_kline_targets(context)
+    kline_data = _load_stock_kline_data(
+        cache=cache,
+        targets=kline_targets,
+        latest_date=today,
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+        policy=policy,
+        timeout_seconds=stock_fetch_timeout,
+        cache_only=cache_only,
+        request_budget=request_budget,
+        source="sina",
+    )
+    context["quality"]["stock_kline_targets"] = len(kline_targets)
+    context["quality"]["stock_kline_files"] = _write_kline_files(output_dir=output_path.parent, kline_data=kline_data)
+    context["quality"]["stock_kline_source"] = "sina"
     output_path.write_text(render_dashboard(context), encoding="utf-8")
     return output_path
+
+
+def _collect_stock_kline_targets(context: dict[str, Any]) -> dict[str, str]:
+    targets: dict[str, str] = {}
+    chart_series = context.get("sector_stock_chart_series", {})
+    for periods in chart_series.values():
+        if not isinstance(periods, dict):
+            continue
+        for boards in periods.values():
+            if not isinstance(boards, dict):
+                continue
+            for series_list in boards.values():
+                for series in series_list or []:
+                    code = _normalize_stock_code(getattr(series, "code", "") or "")
+                    name = str(getattr(series, "name", "") or code)
+                    if code and code not in targets:
+                        targets[code] = name
+    return targets
+
+
+def _load_stock_kline_data(
+    *,
+    cache: CacheStore,
+    targets: dict[str, str],
+    latest_date: str,
+    start_date: str,
+    end_date: str,
+    status: SourceStatus,
+    policy: AccessPolicy,
+    timeout_seconds: float,
+    cache_only: bool = False,
+    request_budget: int = 0,
+    source: str = "eastmoney",
+) -> dict[str, tuple[str, pd.DataFrame]]:
+    kline_data: dict[str, tuple[str, pd.DataFrame]] = {}
+    cache_category = f"stock_kline/{source}"
+    for code, name in targets.items():
+        if status.limited or _request_budget_reached(status, request_budget):
+            break
+        stock = StockInfo(name=name, code=code)
+        cache_name = _stock_cache_name(stock)
+        cached = cache.read_history(cache_category, cache_name)
+        if cached is not None:
+            frame, cached_date = cached
+            if cached_date == latest_date:
+                status.cache_hits += 1
+                kline_data[code] = (name, frame)
+                continue
+        if cache_only:
+            continue
+        try:
+            frame = fetch_with_policy(
+                lambda stock=stock: _fetch_stock_kline_history(
+                    stock,
+                    start_date=start_date,
+                    end_date=end_date,
+                    timeout_seconds=timeout_seconds,
+                    source=source,
+                ),
+                policy=policy,
+                status=status,
+            )
+            cache.write_history(cache_category, cache_name, frame, data_date=latest_date)
+            kline_data[code] = (name, frame)
+        except Exception as exc:
+            status.messages.append(f"{name} K线: {exc}")
+    return kline_data
+
+
+def _write_kline_files(*, output_dir: Path, kline_data: dict[str, tuple[str, pd.DataFrame]]) -> int:
+    kline_dir = output_dir / "data" / "kline"
+    kline_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    for code, (name, frame) in sorted(kline_data.items()):
+        normalized_code = _normalize_stock_code(code)
+        if not normalized_code or frame.empty:
+            continue
+        payload = {
+            "code": normalized_code,
+            "name": name,
+            "rows": _kline_records(frame),
+        }
+        if not payload["rows"]:
+            continue
+        path = kline_dir / f"{normalized_code}.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+        written += 1
+    return written
+
+
+def _kline_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for _, row in frame.sort_values("date").tail(60).iterrows():
+        record = {
+            "date": str(row.get("date", ""))[:10],
+            "open": _to_float_or_none(row.get("open")),
+            "close": _to_float_or_none(row.get("close")),
+            "high": _to_float_or_none(row.get("high")),
+            "low": _to_float_or_none(row.get("low")),
+            "volume": _to_float_or_none(row.get("volume")),
+            "amount": _to_float_or_none(row.get("amount")),
+            "change_pct": _to_float_or_none(row.get("change_pct")),
+            "turnover": _to_float_or_none(row.get("turnover")),
+            "float_market_cap": _to_float_or_none(row.get("float_market_cap")),
+            "pe_dynamic": _to_float_or_none(row.get("pe_dynamic")),
+        }
+        if all(record.get(key) is not None for key in ("date", "open", "close", "high", "low")):
+            records.append(record)
+    return records
+
+
+def _fetch_stock_kline_history(
+    stock: StockInfo,
+    *,
+    start_date: str,
+    end_date: str,
+    timeout_seconds: float,
+    source: str = "eastmoney",
+) -> pd.DataFrame:
+    if source == "sina":
+        return _fetch_sina_stock_kline_history(
+            stock,
+            start_date=start_date,
+            end_date=end_date,
+            timeout_seconds=timeout_seconds,
+        )
+    if source != "eastmoney":
+        raise ValueError(f"unknown stock kline source: {source}")
+    frame = _run_timed_worker(
+        f"{stock.name}({stock.code}) K线",
+        timeout_seconds or 30,
+        _akshare_stock_history_worker,
+        stock.code,
+        start_date,
+        end_date,
+    )
+    return _normalize_stock_kline_history(frame)
+
+
+def _normalize_stock_kline_history(frame: pd.DataFrame) -> pd.DataFrame:
+    column_map = {
+        "日期": "date",
+        "date": "date",
+        "开盘": "open",
+        "open": "open",
+        "收盘": "close",
+        "close": "close",
+        "最高": "high",
+        "high": "high",
+        "最低": "low",
+        "low": "low",
+        "成交量": "volume",
+        "volume": "volume",
+        "成交额": "amount",
+        "amount": "amount",
+        "涨跌幅": "change_pct",
+        "change_pct": "change_pct",
+        "换手率": "turnover",
+        "turnover": "turnover",
+    }
+    renamed = frame.rename(columns={column: column_map[column] for column in frame.columns if column in column_map})
+    required = {"date", "open", "close", "high", "low"}
+    missing = required - set(renamed.columns)
+    if missing:
+        raise ValueError("K线历史缺少字段: " + ", ".join(sorted(missing)))
+
+    ordered_columns = ["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]
+    output = renamed.loc[:, [column for column in ordered_columns if column in renamed.columns]].copy()
+    output["date"] = pd.to_datetime(output["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    for column in output.columns:
+        if column != "date":
+            output[column] = pd.to_numeric(output[column], errors="coerce")
+    output = (
+        output.dropna(subset=["date", "open", "close", "high", "low"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
+    if output.empty:
+        raise ValueError("K线历史为空")
+    return output
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -2609,6 +2818,59 @@ def _fetch_sina_stock_history(
     if frame.empty:
         raise ValueError(f"{stock.name}({stock.code}) missing sina close data")
     return frame
+
+
+def _fetch_sina_stock_kline_history(
+    stock: StockInfo,
+    *,
+    start_date: str,
+    end_date: str,
+    timeout_seconds: float,
+) -> pd.DataFrame:
+    import requests
+    from akshare.stock.stock_zh_a_sina import hk_js_decode, zh_sina_a_stock_hist_url
+    from py_mini_racer import MiniRacer
+
+    symbol = _sina_symbol(stock.code)
+    response = requests.get(zh_sina_a_stock_hist_url.format(symbol), timeout=timeout_seconds or 20)
+    response.raise_for_status()
+    js_code = MiniRacer()
+    js_code.eval(hk_js_decode)
+    encoded = response.text.split("=")[1].split(";")[0].replace('"', "")
+    rows = js_code.call("d", encoded)
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise ValueError(f"{stock.name}({stock.code}) missing sina kline data")
+
+    renamed = frame.rename(
+        columns={
+            "date": "date",
+            "open": "open",
+            "close": "close",
+            "high": "high",
+            "low": "low",
+            "volume": "volume",
+            "amount": "amount",
+        }
+    )
+    required = {"date", "open", "close", "high", "low"}
+    missing = required - set(renamed.columns)
+    if missing:
+        raise ValueError(f"{stock.name}({stock.code}) sina kline missing columns: {', '.join(sorted(missing))}")
+
+    output = renamed.loc[:, [column for column in ["date", "open", "close", "high", "low", "volume", "amount"] if column in renamed.columns]].copy()
+    output["date"] = pd.to_datetime(output["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    for column in output.columns:
+        if column != "date":
+            output[column] = pd.to_numeric(output[column], errors="coerce")
+    start = pd.to_datetime(start_date).strftime("%Y-%m-%d")
+    end = pd.to_datetime(end_date).strftime("%Y-%m-%d")
+    output = output.dropna(subset=["date", "open", "close", "high", "low"])
+    output = output[(output["date"] >= start) & (output["date"] <= end)]
+    output = output.sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    if output.empty:
+        raise ValueError(f"{stock.name}({stock.code}) missing sina kline data in range")
+    return output
 
 
 def _sina_symbol(code: str) -> str:

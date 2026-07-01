@@ -19,6 +19,8 @@ from sector_dashboard import (
     _map_boards_to_sina_labels,
     _select_sina_board_pool,
     _aggregate_sector_histories_from_stocks,
+    _collect_stock_kline_targets,
+    _write_kline_files,
     _sina_symbol,
     generate_live_dashboard,
     generate_sample_dashboard,
@@ -281,7 +283,64 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertIn('class="kline-pane"', html)
         self.assertIn('data-stock-code="600001"', html)
         self.assertIn("loadKlineForLegend", html)
+        self.assertIn("fetchLocalKline", html)
+        self.assertIn("data/kline/", html)
         self.assertIn("MA5", html)
+        self.assertNotIn("push2his.eastmoney.com/api/qt/stock/kline/get", html)
+
+    def test_collect_stock_kline_targets_deduplicates_stock_codes(self):
+        context = {
+            "sector_stock_chart_series": {
+                "industry": {
+                    5: {
+                        "SectorA": [
+                            TrendSeries("FastStock", [TrendPoint("2026-06-26", 1.0)], code="600001"),
+                            TrendSeries("OtherName", [TrendPoint("2026-06-26", 2.0)], code="600001"),
+                        ]
+                    }
+                },
+                "concept": {
+                    10: {
+                        "SectorB": [
+                            TrendSeries("SlowStock", [TrendPoint("2026-06-26", 3.0)], code="000002"),
+                        ]
+                    }
+                },
+            }
+        }
+
+        targets = _collect_stock_kline_targets(context)
+
+        self.assertEqual(targets, {"600001": "FastStock", "000002": "SlowStock"})
+
+    def test_write_kline_files_outputs_local_json_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            frame = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-06-25",
+                        "open": 10.0,
+                        "close": 11.0,
+                        "high": 11.5,
+                        "low": 9.8,
+                        "volume": 100,
+                        "amount": 2000,
+                        "turnover": 1.2,
+                    }
+                ]
+            )
+
+            written = _write_kline_files(
+                output_dir=output_dir,
+                kline_data={"600001": ("FastStock", frame)},
+            )
+
+            self.assertEqual(written, 1)
+            payload = (output_dir / "data" / "kline" / "600001.json").read_text(encoding="utf-8")
+            self.assertIn('"code": "600001"', payload)
+            self.assertIn('"name": "FastStock"', payload)
+            self.assertIn('"open": 10.0', payload)
 
     def test_stock_snapshot_histories_preserve_stock_code_for_kline_linking(self):
         from sector_dashboard import _snapshot_histories_for_constituents
