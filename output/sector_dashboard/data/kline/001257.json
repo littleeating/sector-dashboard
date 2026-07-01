@@ -23,7 +23,7 @@
       "low": 22.25,
       "volume": 77644958.0,
       "amount": 1826876450.0,
-      "change_pct": null,
+      "change_pct": 0.2021835826930829,
       "turnover": 56.69667669743348,
       "float_market_cap": 3393571142.64,
       "pe_dynamic": 51.46952947
@@ -36,7 +36,7 @@
       "low": 22.24,
       "volume": 54523125.0,
       "amount": 1280105666.0,
-      "change_pct": null,
+      "change_pct": -10.169491525423723,
       "turnover": 39.813016457021625,
       "float_market_cap": 3048462212.88,
       "pe_dynamic": 46.23534003
@@ -49,7 +49,7 @@
       "low": 21.49,
       "volume": 58565120.0,
       "amount": 1353713078.0,
-      "change_pct": null,
+      "change_pct": 4.088050314465419,
       "turnover": 42.764498299894704,
       "float_market_cap": 3173084881.96,
       "pe_dynamic": 48.125464
@@ -62,7 +62,7 @@
       "low": 22.8,
       "volume": 64303773.0,
       "amount": 1553519759.0,
-      "change_pct": null,
+      "change_pct": 4.100129477772985,
       "turnover": 46.954886989650404,
       "float_market_cap": 3303185470.56,
       "pe_dynamic": 50.09867033
@@ -75,7 +75,7 @@
       "low": 22.5,
       "volume": 41811326.0,
       "amount": 982955638.0,
-      "change_pct": null,
+      "change_pct": -2.23880597014926,
       "turnover": 30.530807068154953,
       "float_market_cap": 3229233557.04,
       "pe_dynamic": 48.97705831
@@ -88,7 +88,7 @@
       "low": 22.57,
       "volume": 43465547.0,
       "amount": 1002367691.0,
-      "change_pct": null,
+      "change_pct": -4.113655640373192,
       "turnover": 31.738726238168613,
       "float_market_cap": 3096394008.68,
       "pe_dynamic": 46.96231079
@@ -101,7 +101,7 @@
       "low": 22.67,
       "volume": 36214190.0,
       "amount": 845446171.0,
-      "change_pct": null,
+      "change_pct": 2.653693056169848,
       "turnover": 26.443754690284315,
       "float_market_cap": 3178562801.48,
       "pe_dynamic": 48.20854637
@@ -114,7 +114,7 @@
       "low": 22.72,
       "volume": 29646087.0,
       "amount": 684109013.0,
-      "change_pct": null,
+      "change_pct": -1.292546316243004,
       "turnover": 21.647698102727876,
       "float_market_cap": 3137478405.08,
       "pe_dynamic": 47.58542858
@@ -127,7 +127,7 @@
       "low": 23.32,
       "volume": 42749913.0,
       "amount": 1020994514.0,
-      "change_pct": null,
+      "change_pct": 3.7538192928852077,
       "turnover": 31.216167264903522,
       "float_market_cap": 3255253674.76,
       "pe_dynamic": 49.37169958
@@ -140,7 +140,7 @@
       "low": 22.88,
       "volume": 29157892.0,
       "amount": 677799171.0,
-      "change_pct": null,
+      "change_pct": -1.4303744215397596,
       "turnover": 21.29121604911786,
       "float_market_cap": 3208691358.84,
       "pe_dynamic": 48.66549941
@@ -153,7 +153,7 @@
       "low": 22.93,
       "volume": 25548794.0,
       "amount": 593917524.0,
-      "change_pct": null,
+      "change_pct": -1.3230900554844216,
       "turnover": 18.65583742639578,
       "float_market_cap": 3166237482.56,
       "pe_dynamic": 48.02161103
@@ -166,7 +166,7 @@
       "low": 22.82,
       "volume": 32489729.0,
       "amount": 761836974.0,
-      "change_pct": null,
+      "change_pct": 2.941176470588225,
       "turnover": 23.724137517084223,
       "float_market_cap": 3259362114.4,
       "pe_dynamic": 49.43401136
@@ -179,7 +179,7 @@
       "low": 23.53,
       "volume": 40261726.0,
       "amount": 986486420.0,
-      "change_pct": null,
+      "change_pct": 3.6134453781512477,
       "turnover": 29.39928259479066,
       "float_market_cap": 3377137384.08,
       "pe_dynamic": 51.22028235
@@ -192,7 +192,7 @@
       "low": 23.8,
       "volume": 25018842.0,
       "amount": 601462632.0,
-      "change_pct": null,
+      "change_pct": -1.6626115166261113,
       "turnover": 18.268864234792556,
       "float_market_cap": 3320988709.0,
       "pe_dynamic": 50.36868804
@@ -205,7 +205,7 @@
       "low": 22.9,
       "volume": 31998562.0,
       "amount": 746018017.0,
-      "change_pct": null,
+      "change_pct": -5.319587628865974,
       "turnover": 23.365485296505415,
       "float_market_cap": 3144325804.48,
       "pe_dynamic": 47.68928154
@@ -218,7 +218,7 @@
       "low": 22.31,
       "volume": 17373708.0,
       "amount": 392212402.0,
-      "change_pct": null,
+      "change_pct": -1.3501742160278885,
       "turnover": 12.686355056198417,
       "float_market_cap": 3101871928.2,
       "pe_dynamic": 47.04539316
@@ -231,7 +231,7 @@
       "low": 21.86,
       "volume": 14598743.0,
       "amount": 323662887.0,
-      "change_pct": null,
+      "change_pct": -1.6777041942604765,
       "turnover": 10.660063877681795,
       "float_market_cap": 3049831692.76,
       "pe_dynamic": 46.25611063
@@ -244,7 +244,7 @@
       "low": 21.53,
       "volume": 15084009.0,
       "amount": 330016929.0,
-      "change_pct": null,
+      "change_pct": -2.334979793444092,
       "turnover": 11.01440716310487,
       "float_market_cap": 2978618739.0,
       "pe_dynamic": 44.47734583
@@ -257,7 +257,7 @@
       "low": 21.68,
       "volume": 21945338.0,
       "amount": 492282613.0,
-      "change_pct": null,
+      "change_pct": 4.321839080459777,
       "turnover": 16.0245786159341,
       "float_market_cap": 3107349847.72,
       "pe_dynamic": 46.39958514
@@ -270,7 +270,7 @@
       "low": 22.23,
       "volume": 15369114.0,
       "amount": 344698753.0,
-      "change_pct": null,
+      "change_pct": -0.7492287351256177,
       "turnover": 11.2225920398334,
       "float_market_cap": 3084068689.76,
       "pe_dynamic": 46.05194612
@@ -283,7 +283,7 @@
       "low": 22.52,
       "volume": 40374167.0,
       "amount": 962917267.0,
-      "change_pct": null,
+      "change_pct": 9.724689165186518,
       "turnover": 29.48138748851133,
       "float_market_cap": 3383984783.48,
       "pe_dynamic": 50.53035473
@@ -296,7 +296,7 @@
       "low": 24.75,
       "volume": 47649357.0,
       "amount": 1244574889.0,
-      "change_pct": null,
+      "change_pct": 5.2610279239174496,
       "turnover": 34.793761993787015,
       "float_market_cap": 3562017167.88,
       "pe_dynamic": 53.1887708
@@ -309,7 +309,7 @@
       "low": 25.65,
       "volume": 34760723.0,
       "amount": 909601124.0,
-      "change_pct": null,
+      "change_pct": 1.8838908112264408,
       "turnover": 25.382426940073046,
       "float_market_cap": 3629121682.0,
       "pe_dynamic": 54.19078917
@@ -322,7 +322,7 @@
       "low": 25.85,
       "volume": 25070957.0,
       "amount": 657672492.0,
-      "change_pct": null,
+      "change_pct": -1.5471698113207588,
       "turnover": 18.30691882819045,
       "float_market_cap": 3572973006.92,
       "pe_dynamic": 53.35236564
@@ -335,7 +335,7 @@
       "low": 25.24,
       "volume": 40009295.0,
       "amount": 1059168436.0,
-      "change_pct": null,
+      "change_pct": 0.268302031429668,
       "turnover": 29.21495641104271,
       "float_market_cap": 3582559366.08,
       "pe_dynamic": 53.49551112
@@ -348,7 +348,7 @@
       "low": 26.08,
       "volume": 41132279.0,
       "amount": 1103785566.0,
-      "change_pct": null,
+      "change_pct": 2.9816513761467878,
       "turnover": 30.03496407701879,
       "float_market_cap": 3689378796.72,
       "pe_dynamic": 55.09056076
@@ -361,7 +361,7 @@
       "low": 25.0,
       "volume": 29288223.0,
       "amount": 750897754.0,
-      "change_pct": null,
+      "change_pct": -7.201187824795852,
       "turnover": 21.386384296496566,
       "float_market_cap": 3423699700.0,
       "pe_dynamic": 51.12338601
@@ -374,7 +374,7 @@
       "low": 23.88,
       "volume": 21860070.0,
       "amount": 532700753.0,
-      "change_pct": null,
+      "change_pct": -3.159999999999996,
       "turnover": 15.962315561729904,
       "float_market_cap": 3315510789.48,
       "pe_dynamic": 49.50788701
@@ -387,7 +387,7 @@
       "low": 23.7,
       "volume": 19980317.0,
       "amount": 489720260.0,
-      "change_pct": null,
+      "change_pct": 2.437009500206533,
       "turnover": 14.589711971526006,
       "float_market_cap": 3396310102.4,
       "pe_dynamic": 50.71439892
@@ -400,7 +400,7 @@
       "low": 24.55,
       "volume": 35174388.0,
       "amount": 906197341.0,
-      "change_pct": null,
+      "change_pct": 1.9758064516129048,
       "turnover": 25.6844868724906,
       "float_market_cap": 3463414616.52,
       "pe_dynamic": 51.71641729
@@ -413,7 +413,7 @@
       "low": 24.2,
       "volume": 20978572.0,
       "amount": 516475309.0,
-      "change_pct": null,
+      "change_pct": -1.9375247133254225,
       "turnover": 15.318641994214621,
       "float_market_cap": 3396310102.4,
       "pe_dynamic": 50.71439892
@@ -426,7 +426,7 @@
       "low": 23.81,
       "volume": 25995985.0,
       "amount": 648844439.0,
-      "change_pct": null,
+      "change_pct": -3.629032258064524,
       "turnover": 18.982378185797078,
       "float_market_cap": 3273056913.2,
       "pe_dynamic": 48.87395703
@@ -439,7 +439,7 @@
       "low": 24.19,
       "volume": 16622560.0,
       "amount": 408638876.0,
-      "change_pct": null,
+      "change_pct": 3.179916317991638,
       "turnover": 12.137863609942192,
       "float_market_cap": 3377137384.08,
       "pe_dynamic": 50.42810796
@@ -452,7 +452,7 @@
       "low": 23.17,
       "volume": 23542035.0,
       "amount": 558033413.0,
-      "change_pct": null,
+      "change_pct": -4.785077047850772,
       "turnover": 17.19049351787483,
       "float_market_cap": 3215538758.24,
       "pe_dynamic": 48.01508414
@@ -465,7 +465,7 @@
       "low": 22.64,
       "volume": 38027321.0,
       "amount": 938425823.0,
-      "change_pct": null,
+      "change_pct": 10.008517887563873,
       "turnover": 27.76771061433922,
       "float_market_cap": 3537366530.04,
       "pe_dynamic": 52.82068242
@@ -478,7 +478,7 @@
       "low": 26.8,
       "volume": 39928775.0,
       "amount": 1115464811.0,
-      "change_pct": null,
+      "change_pct": 9.988385598141702,
       "turnover": 29.156160366518126,
       "float_market_cap": 3890692339.08,
       "pe_dynamic": 58.09661586
@@ -491,7 +491,7 @@
       "low": 27.3,
       "volume": 65164934.0,
       "amount": 1851802468.0,
-      "change_pct": null,
+      "change_pct": -1.4431538190777915,
       "turnover": 47.58371039375913,
       "float_market_cap": 3834543664.0,
       "pe_dynamic": 57.25819233
@@ -504,7 +504,7 @@
       "low": 25.2,
       "volume": 42716795.0,
       "amount": 1120168423.0,
-      "change_pct": null,
+      "change_pct": -9.999999999999998,
       "turnover": 31.191984361245233,
       "float_market_cap": 3451089297.6,
       "pe_dynamic": 51.5323731
@@ -517,7 +517,7 @@
       "low": 24.62,
       "volume": 29902074.0,
       "amount": 763885250.0,
-      "change_pct": null,
+      "change_pct": -1.1507936507936467,
       "turnover": 21.834620892714394,
       "float_market_cap": 3411374381.08,
       "pe_dynamic": 50.93934182
@@ -530,7 +530,7 @@
       "low": 23.58,
       "volume": 24879390.0,
       "amount": 612534248.0,
-      "change_pct": null,
+      "change_pct": 0.9233239662786108,
       "turnover": 18.16703579464052,
       "float_market_cap": 3442872418.32,
       "pe_dynamic": 51.40967697
@@ -543,7 +543,7 @@
       "low": 24.51,
       "volume": 23385071.0,
       "amount": 593517728.0,
-      "change_pct": null,
+      "change_pct": 0.835322195704058,
       "turnover": 17.075877741263348,
       "float_market_cap": 3471631495.8,
       "pe_dynamic": 51.83911341
@@ -556,7 +556,7 @@
       "low": 24.42,
       "volume": 14964594.0,
       "amount": 369598229.0,
-      "change_pct": null,
+      "change_pct": -2.564102564102577,
       "turnover": 10.927209825090676,
       "float_market_cap": 3382615303.6,
       "pe_dynamic": 50.50990538
@@ -569,7 +569,7 @@
       "low": 23.69,
       "volume": 20310585.0,
       "amount": 494931882.0,
-      "change_pct": null,
+      "change_pct": -2.2267206477732837,
       "turnover": 14.83087506185195,
       "float_market_cap": 3307293910.2,
       "pe_dynamic": 49.38519089
@@ -582,7 +582,7 @@
       "low": 22.8,
       "volume": 17872900.0,
       "amount": 418452507.0,
-      "change_pct": null,
+      "change_pct": -3.39544513457557,
       "turnover": 13.050867165715498,
       "float_market_cap": 3194996560.04,
       "pe_dynamic": 47.70834382
@@ -595,7 +595,7 @@
       "low": 22.42,
       "volume": 16254294.0,
       "amount": 374520369.0,
-      "change_pct": null,
+      "change_pct": -0.385769395627944,
       "turnover": 11.868954219320111,
       "float_market_cap": 3182671241.12,
       "pe_dynamic": 47.52429963
@@ -608,7 +608,7 @@
       "low": 22.27,
       "volume": 16186742.0,
       "amount": 367213540.0,
-      "change_pct": null,
+      "change_pct": -1.3339070567986222,
       "turnover": 11.819627463238087,
       "float_market_cap": 3140217364.84,
       "pe_dynamic": 46.89036965
@@ -621,7 +621,7 @@
       "low": 22.8,
       "volume": 33516815.0,
       "amount": 827510544.0,
-      "change_pct": null,
+      "change_pct": 9.986916703009152,
       "turnover": 24.474120057901104,
       "float_market_cap": 3453828257.36,
       "pe_dynamic": 51.57327181
@@ -634,7 +634,7 @@
       "low": 27.74,
       "volume": 14300543.0,
       "amount": 396697063.0,
-      "change_pct": null,
+      "change_pct": 9.992069785884228,
       "turnover": 10.442316976573617,
       "float_market_cap": 3798937187.12,
       "pe_dynamic": 56.72650912
@@ -647,7 +647,7 @@
       "low": 29.5,
       "volume": 48576710.0,
       "amount": 1472260522.0,
-      "change_pct": null,
+      "change_pct": 9.985580389329506,
       "turnover": 35.470919076226224,
       "float_market_cap": 4178283113.88,
       "pe_dynamic": 62.39098029
@@ -660,7 +660,7 @@
       "low": 31.06,
       "volume": 22095579.0,
       "amount": 720445750.0,
-      "change_pct": null,
+      "change_pct": 9.996722386102919,
       "turnover": 16.13428522951356,
       "float_market_cap": 4595974477.28,
       "pe_dynamic": 68.62803338
@@ -673,7 +673,7 @@
       "low": 31.88,
       "volume": 86482027.0,
       "amount": 2913160272.0,
-      "change_pct": null,
+      "change_pct": -2.5029797377830842,
       "turnover": 63.14954185380219,
       "float_market_cap": 4480938167.36,
       "pe_dynamic": 66.91028761
@@ -686,7 +686,7 @@
       "low": 31.16,
       "volume": 58817752.0,
       "amount": 1881109187.0,
-      "change_pct": null,
+      "change_pct": -2.3227383863080653,
       "turnover": 42.948971254692694,
       "float_market_cap": 4376857696.48,
       "pe_dynamic": 65.35613667
@@ -699,7 +699,7 @@
       "low": 31.38,
       "volume": 75985736.0,
       "amount": 2520258650.0,
-      "change_pct": null,
+      "change_pct": 5.788485607008775,
       "turnover": 55.485105776070256,
       "float_market_cap": 4630211474.28,
       "pe_dynamic": 69.13926724
@@ -712,7 +712,7 @@
       "low": 30.43,
       "volume": 39166665.0,
       "amount": 1223496108.0,
-      "change_pct": null,
+      "change_pct": -9.997042295178948,
       "turnover": 28.599664421502858,
       "float_market_cap": 4167327274.84,
       "pe_dynamic": 62.22738545
@@ -725,7 +725,7 @@
       "low": 28.68,
       "volume": 40004965.0,
       "amount": 1176359075.0,
-      "change_pct": null,
+      "change_pct": -2.5632599408478507,
       "turnover": 29.211794626730843,
       "float_market_cap": 4060507844.2,
       "pe_dynamic": 60.63233581
@@ -738,7 +738,7 @@
       "low": 29.19,
       "volume": 30886103.0,
       "amount": 918598134.0,
-      "change_pct": null,
+      "change_pct": 0.0,
       "turnover": 22.55316303004028,
       "float_market_cap": 4060507844.2,
       "pe_dynamic": 60.63233581
@@ -751,7 +751,7 @@
       "low": 28.4,
       "volume": 33050452.0,
       "amount": 969492785.0,
-      "change_pct": null,
+      "change_pct": -3.3726812816188834,
       "turnover": 24.13357982302011,
       "float_market_cap": 3923559856.2,
       "pe_dynamic": 58.58740037
@@ -764,7 +764,7 @@
       "low": 28.28,
       "volume": 32241315.0,
       "amount": 937768538.0,
-      "change_pct": null,
+      "change_pct": 1.9895287958115127,
       "turnover": 23.54274456372444,
       "float_market_cap": 4001620209.36,
       "pe_dynamic": 59.75301357
@@ -777,7 +777,7 @@
       "low": 27.5,
       "volume": 30922416.0,
       "amount": 861960207.0,
-      "change_pct": null,
+      "change_pct": -4.928131416837777,
       "turnover": 22.57967893621044,
       "float_market_cap": 3804415106.64,
       "pe_dynamic": 56.80830653

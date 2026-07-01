@@ -22,6 +22,7 @@ from sector_dashboard import (
     _select_sina_board_pool,
     _aggregate_sector_histories_from_stocks,
     _collect_stock_kline_targets,
+    _kline_records,
     _merge_kline_snapshot_metrics,
     _write_kline_files,
     _sina_symbol,
@@ -349,6 +350,44 @@ class SectorDashboardRenderTest(unittest.TestCase):
             self.assertIn('"turnover": null', payload)
             self.assertIn('"pe_dynamic": 18.5', payload)
             self.assertIn('"float_market_cap": 3200000000.0', payload)
+
+    def test_kline_records_calculates_close_change_pct_when_missing(self):
+        frame = pd.DataFrame(
+            [
+                {"date": "2026-06-24", "open": 10.0, "close": 10.0, "high": 10.5, "low": 9.8},
+                {"date": "2026-06-25", "open": 10.1, "close": 11.0, "high": 11.2, "low": 10.0},
+                {"date": "2026-06-26", "open": 11.0, "close": 10.45, "high": 11.1, "low": 10.3},
+            ]
+        )
+
+        records = _kline_records(frame)
+
+        self.assertIsNone(records[0]["change_pct"])
+        self.assertAlmostEqual(records[1]["change_pct"], 10.0)
+        self.assertAlmostEqual(records[2]["change_pct"], -5.0)
+
+    def test_render_dashboard_kline_metrics_include_close_change_pct(self):
+        html = render_dashboard(
+            {
+                "data_date": "2026-06-26",
+                "generated_at": "2026-06-28 16:30:00",
+                "periods": [5],
+                "industry_rankings": {5: []},
+                "concept_rankings": {5: []},
+                "industry_count": 0,
+                "concept_count": 0,
+                "trend_series": [],
+                "period_chart_series": {"industry": {5: []}, "concept": {5: []}},
+                "stock_rankings": {},
+                "stock_trend_series": {},
+                "stock_kline_files": {},
+                "statuses": [],
+                "quality": {},
+            }
+        )
+
+        self.assertIn("metric('涨跌幅', percentText(selected.changePct)", html)
+        self.assertIn("function percentText(value) {\n  return value === null || value === undefined", html)
 
     def test_merge_kline_snapshot_metrics_adds_same_day_valuation_fields(self):
         kline = pd.DataFrame(

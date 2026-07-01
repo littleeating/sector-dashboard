@@ -644,7 +644,8 @@ function renderKlinePane(pane, name, rows, selectedIndex) {
     '<div class="kline-title"><strong>' + escapeHtml(name) + ' · 近60日K线</strong><span>日K · MA5 / MA10 / MA20</span></div>' +
     '<div class="kline-metrics">' +
       metric('选中日期', selected.date) + metric('开', priceText(selected.open), 'red') + metric('收', priceText(selected.close), selected.close >= selected.open ? 'red' : 'green') +
-      metric('高', priceText(selected.high), 'red') + metric('低', priceText(selected.low), 'green') + metric('成交量', compactVolume(selected.volume)) +
+      metric('涨跌幅', percentText(selected.changePct), changeTone(selected.changePct)) + metric('高', priceText(selected.high), 'red') + metric('低', priceText(selected.low), 'green') +
+      metric('成交量', compactVolume(selected.volume)) +
       metric('换手率', percentText(selected.turnover)) + metric('流通市值', compactMoney(selected.floatMarketCap)) + metric('动态PE', ratioText(selected.peDynamic)) +
     '</div>' +
     '<svg class="kline-svg" viewBox="0 0 ' + width + ' 540" role="img" aria-label="' + escapeHtml(name) + '近60日K线图">' +
@@ -707,7 +708,11 @@ function priceText(value) {
 }
 
 function percentText(value) {
-  return value ? Number(value).toFixed(2) + '%' : '--';
+  return value === null || value === undefined || !Number.isFinite(Number(value)) ? '--' : Number(value).toFixed(2) + '%';
+}
+
+function changeTone(value) {
+  return value === null ? '' : (Number(value) >= 0 ? 'red' : 'green');
 }
 
 function compactVolume(value) {
@@ -1430,22 +1435,29 @@ def _write_kline_files(*, output_dir: Path, kline_data: dict[str, tuple[str, pd.
 
 def _kline_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
+    previous_close: float | None = None
     for _, row in frame.sort_values("date").tail(60).iterrows():
+        close = _to_float_or_none(row.get("close"))
+        change_pct = _to_float_or_none(row.get("change_pct"))
+        if change_pct is None and previous_close not in (None, 0) and close is not None:
+            change_pct = (close / previous_close - 1) * 100
         record = {
             "date": str(row.get("date", ""))[:10],
             "open": _to_float_or_none(row.get("open")),
-            "close": _to_float_or_none(row.get("close")),
+            "close": close,
             "high": _to_float_or_none(row.get("high")),
             "low": _to_float_or_none(row.get("low")),
             "volume": _to_float_or_none(row.get("volume")),
             "amount": _to_float_or_none(row.get("amount")),
-            "change_pct": _to_float_or_none(row.get("change_pct")),
+            "change_pct": change_pct,
             "turnover": _to_float_or_none(row.get("turnover")),
             "float_market_cap": _to_float_or_none(row.get("float_market_cap")),
             "pe_dynamic": _to_float_or_none(row.get("pe_dynamic")),
         }
         if all(record.get(key) is not None for key in ("date", "open", "close", "high", "low")):
             records.append(record)
+        if close is not None:
+            previous_close = close
     return records
 
 
