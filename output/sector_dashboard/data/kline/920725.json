@@ -11,9 +11,9 @@
       "volume": 1138853.0,
       "amount": 33132229.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 2.7396109875708086,
+      "float_market_cap": 1208852110.4,
+      "pe_dynamic": -140.26425367
     },
     {
       "date": "2026-04-02",
@@ -24,9 +24,9 @@
       "volume": 1694423.0,
       "amount": 49935053.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.076083452730679,
+      "float_market_cap": 1208020712.8,
+      "pe_dynamic": -140.16778582
     },
     {
       "date": "2026-04-03",
@@ -37,9 +37,9 @@
       "volume": 1811047.0,
       "amount": 52726742.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.3566327350475875,
+      "float_market_cap": 1214671893.6,
+      "pe_dynamic": -140.93952861
     },
     {
       "date": "2026-04-07",
@@ -50,9 +50,9 @@
       "volume": 2151062.0,
       "amount": 63025465.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.174568702146843,
+      "float_market_cap": 1204279423.6,
+      "pe_dynamic": -139.73368049
     },
     {
       "date": "2026-04-08",
@@ -63,9 +63,9 @@
       "volume": 2653743.0,
       "amount": 79287790.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 6.38381202928659,
+      "float_market_cap": 1257488870.0,
+      "pe_dynamic": -145.90762288
     },
     {
       "date": "2026-04-09",
@@ -76,9 +76,9 @@
       "volume": 2074035.0,
       "amount": 62710268.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.98927348358956,
+      "float_market_cap": 1257904568.8,
+      "pe_dynamic": -145.95585681
     },
     {
       "date": "2026-04-10",
@@ -89,9 +89,9 @@
       "volume": 2084507.0,
       "amount": 63298659.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.014464799994611,
+      "float_market_cap": 1248343496.4,
+      "pe_dynamic": -144.84647653
     },
     {
       "date": "2026-04-13",
@@ -102,9 +102,9 @@
       "volume": 1180496.0,
       "amount": 35219449.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 2.8397868841574714,
+      "float_market_cap": 1236703930.0,
+      "pe_dynamic": -143.49592663
     },
     {
       "date": "2026-04-14",
@@ -115,9 +115,9 @@
       "volume": 3852579.0,
       "amount": 121552139.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 9.26771739538339,
+      "float_market_cap": 1287003484.8,
+      "pe_dynamic": -149.33223155
     },
     {
       "date": "2026-04-15",
@@ -128,9 +128,9 @@
       "volume": 5011230.0,
       "amount": 162058129.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 12.054954212040062,
+      "float_market_cap": 1330651858.8,
+      "pe_dynamic": -154.39679367
     },
     {
       "date": "2026-04-16",
@@ -141,9 +141,9 @@
       "volume": 3194585.0,
       "amount": 101638499.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 7.684854995973047,
+      "float_market_cap": 1332730352.8,
+      "pe_dynamic": -154.63796329
     },
     {
       "date": "2026-04-17",
@@ -154,9 +154,9 @@
       "volume": 4805842.0,
       "amount": 155909148.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 11.560875326077438,
+      "float_market_cap": 1364739160.4,
+      "pe_dynamic": -158.35197551
     },
     {
       "date": "2026-04-20",
@@ -167,9 +167,9 @@
       "volume": 5800940.0,
       "amount": 197435464.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 13.954671026233417,
+      "float_market_cap": 1408387534.4,
+      "pe_dynamic": -163.41653763
     },
     {
       "date": "2026-04-21",
@@ -180,9 +180,9 @@
       "volume": 3184748.0,
       "amount": 105661115.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 7.661191227879415,
+      "float_market_cap": 1364323461.6,
+      "pe_dynamic": -158.30374158
     },
     {
       "date": "2026-04-22",
@@ -193,9 +193,9 @@
       "volume": 2991471.0,
       "amount": 97262628.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 7.196246416876835,
+      "float_market_cap": 1344785618.0,
+      "pe_dynamic": -156.03674711
     },
     {
       "date": "2026-04-23",
@@ -206,9 +206,9 @@
       "volume": 2412531.0,
       "amount": 77392464.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.803555362680864,
+      "float_market_cap": 1299058750.0,
+      "pe_dynamic": -150.73101537
     },
     {
       "date": "2026-04-24",
@@ -219,9 +219,9 @@
       "volume": 1576999.0,
       "amount": 48888119.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 3.7936097001001685,
+      "float_market_cap": 1291991870.4,
+      "pe_dynamic": -149.91103865
     },
     {
       "date": "2026-04-27",
@@ -232,9 +232,9 @@
       "volume": 1958513.0,
       "amount": 61690202.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.711375159129639,
+      "float_market_cap": 1290744774.0,
+      "pe_dynamic": -149.76633687
     },
     {
       "date": "2026-04-28",
@@ -245,9 +245,9 @@
       "volume": 1535773.0,
       "amount": 47166216.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 3.6944369336644702,
+      "float_market_cap": 1257904568.8,
+      "pe_dynamic": -145.95585681
     },
     {
       "date": "2026-04-29",
@@ -258,9 +258,9 @@
       "volume": 1459633.0,
       "amount": 44301551.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 3.511275471567395,
+      "float_market_cap": 1257488870.0,
+      "pe_dynamic": -195.93016724
     },
     {
       "date": "2026-04-30",
@@ -271,9 +271,9 @@
       "volume": 2487441.0,
       "amount": 77973070.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.983757951670777,
+      "float_market_cap": 1301968641.6,
+      "pe_dynamic": -202.86058968
     },
     {
       "date": "2026-05-06",
@@ -284,9 +284,9 @@
       "volume": 2655760.0,
       "amount": 85231786.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 6.388664100064759,
+      "float_market_cap": 1333561750.4,
+      "pe_dynamic": -207.78313273
     },
     {
       "date": "2026-05-07",
@@ -297,9 +297,9 @@
       "volume": 2472202.0,
       "amount": 80147916.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.94709919778455,
+      "float_market_cap": 1352268196.4,
+      "pe_dynamic": -210.69779637
     },
     {
       "date": "2026-05-08",
@@ -310,9 +310,9 @@
       "volume": 2261326.0,
       "amount": 73723206.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 5.439818445470615,
+      "float_market_cap": 1348942606.0,
+      "pe_dynamic": -210.17963395
     },
     {
       "date": "2026-05-11",
@@ -323,9 +323,9 @@
       "volume": 3801864.0,
       "amount": 128162297.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 9.145718005440477,
+      "float_market_cap": 1361413570.0,
+      "pe_dynamic": -212.12274304
     },
     {
       "date": "2026-05-12",
@@ -336,9 +336,9 @@
       "volume": 4330179.0,
       "amount": 143696166.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 10.416626172603818,
+      "float_market_cap": 1397579365.6,
+      "pe_dynamic": -217.75775943
     },
     {
       "date": "2026-05-13",
@@ -349,9 +349,9 @@
       "volume": 6697669.0,
       "amount": 233227136.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 16.111831451040995,
+      "float_market_cap": 1451620209.6,
+      "pe_dynamic": -226.17789884
     },
     {
       "date": "2026-05-14",
@@ -362,9 +362,9 @@
       "volume": 4780878.0,
       "amount": 161517507.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 11.500822229941486,
+      "float_market_cap": 1385108401.6,
+      "pe_dynamic": -215.81465033
     },
     {
       "date": "2026-05-15",
@@ -375,9 +375,9 @@
       "volume": 3033361.0,
       "amount": 99307046.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 7.297016493672823,
+      "float_market_cap": 1335640244.4,
+      "pe_dynamic": -208.10698425
     },
     {
       "date": "2026-05-18",
@@ -388,9 +388,9 @@
       "volume": 2750880.0,
       "amount": 90089175.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 6.6174836203520435,
+      "float_market_cap": 1355178088.0,
+      "pe_dynamic": -211.1511885
     },
     {
       "date": "2026-05-19",
@@ -401,9 +401,9 @@
       "volume": 2014758.0,
       "amount": 64529407.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.846677450115324,
+      "float_market_cap": 1334393148.0,
+      "pe_dynamic": -207.91267334
     },
     {
       "date": "2026-05-20",
@@ -414,9 +414,9 @@
       "volume": 2029934.0,
       "amount": 65277753.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 4.8831846519643545,
+      "float_market_cap": 1340212931.2,
+      "pe_dynamic": -208.81945758
     },
     {
       "date": "2026-05-21",
@@ -427,9 +427,9 @@
       "volume": 2882242.0,
       "amount": 91951526.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 6.933486457021286,
+      "float_market_cap": 1269959834.0,
+      "pe_dynamic": -197.87327634
     },
     {
       "date": "2026-05-22",
@@ -440,9 +440,9 @@
       "volume": 7742498.0,
       "amount": 260938515.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 18.62525944265415,
+      "float_market_cap": 1442474836.0,
+      "pe_dynamic": -224.75295217
     },
     {
       "date": "2026-05-25",
@@ -453,9 +453,9 @@
       "volume": 9715178.0,
       "amount": 365308078.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 23.370714565449795,
+      "float_market_cap": 1601271777.6,
+      "pe_dynamic": -249.495208
     },
     {
       "date": "2026-05-26",
@@ -466,9 +466,9 @@
       "volume": 9531408.0,
       "amount": 382688073.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 22.928639678536477,
+      "float_market_cap": 1680670248.4,
+      "pe_dynamic": -261.86633592
     },
     {
       "date": "2026-05-27",
@@ -479,9 +479,9 @@
       "volume": 6820547.0,
       "amount": 257844480.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 16.407425280034488,
+      "float_market_cap": 1543073945.6,
+      "pe_dynamic": -240.42736555
     },
     {
       "date": "2026-05-28",
@@ -492,9 +492,9 @@
       "volume": 11874466.0,
       "amount": 530225799.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 28.56507163359625,
+      "float_market_cap": 2005746710.0,
+      "pe_dynamic": -312.51671304
     },
     {
       "date": "2026-05-29",
@@ -505,9 +505,9 @@
       "volume": 13832538.0,
       "amount": 741967130.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 33.27538592846551,
+      "float_market_cap": 2174104724.0,
+      "pe_dynamic": -338.74868584
     },
     {
       "date": "2026-06-01",
@@ -518,9 +518,9 @@
       "volume": 10169644.0,
       "amount": 583855259.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 24.463972472376636,
+      "float_market_cap": 2577332560.0,
+      "pe_dynamic": -401.57587996
     },
     {
       "date": "2026-06-02",
@@ -531,9 +531,9 @@
       "volume": 9462478.0,
       "amount": 666940818.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 22.762822505140743,
+      "float_market_cap": 3350532328.0,
+      "pe_dynamic": -522.04864395
     },
     {
       "date": "2026-06-03",
@@ -544,9 +544,9 @@
       "volume": 10838832.0,
       "amount": 984013228.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 26.073763022650056,
+      "float_market_cap": 3928353660.0,
+      "pe_dynamic": -612.07936543
     },
     {
       "date": "2026-06-04",
@@ -557,9 +557,9 @@
       "volume": 10669475.0,
       "amount": 1035949079.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 25.666359874024174,
+      "float_market_cap": 3770388116.0,
+      "pe_dynamic": -587.4666502
     },
     {
       "date": "2026-06-05",
@@ -570,9 +570,9 @@
       "volume": 11202301.0,
       "amount": 977023820.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 26.94811964816834,
+      "float_market_cap": 3464849498.0,
+      "pe_dynamic": -539.86047734
     },
     {
       "date": "2026-06-08",
@@ -583,9 +583,9 @@
       "volume": 8951332.0,
       "amount": 702517037.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 21.53321587649519,
+      "float_market_cap": 3450300040.0,
+      "pe_dynamic": -537.59351672
     },
     {
       "date": "2026-06-09",
@@ -596,9 +596,9 @@
       "volume": 10181369.0,
       "amount": 787134926.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 24.49217799041036,
+      "float_market_cap": 3086979288.8,
+      "pe_dynamic": -480.98427171
     },
     {
       "date": "2026-06-10",
@@ -609,9 +609,9 @@
       "volume": 9350627.0,
       "amount": 639712929.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 22.49375509383236,
+      "float_market_cap": 2675021778.0,
+      "pe_dynamic": -416.79690122
     },
     {
       "date": "2026-06-11",
@@ -622,9 +622,9 @@
       "volume": 8674862.0,
       "amount": 577411447.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 20.868142991993242,
+      "float_market_cap": 2672943284.0,
+      "pe_dynamic": -416.4730497
     },
     {
       "date": "2026-06-12",
@@ -635,9 +635,9 @@
       "volume": 9426426.0,
       "amount": 656198721.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 22.676096250458265,
+      "float_market_cap": 2845458286.0,
+      "pe_dynamic": -443.35272554
     },
     {
       "date": "2026-06-15",
@@ -648,9 +648,9 @@
       "volume": 9591989.0,
       "amount": 650974312.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 23.07437259862189,
+      "float_market_cap": 2990537167.2,
+      "pe_dynamic": -465.95756136
     },
     {
       "date": "2026-06-16",
@@ -661,9 +661,9 @@
       "volume": 9233261.0,
       "amount": 683445641.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 20.89886338339933,
+      "float_market_cap": 3282183088.65,
+      "pe_dynamic": -481.17858262
     },
     {
       "date": "2026-06-17",
@@ -674,9 +674,9 @@
       "volume": 8784840.0,
       "amount": 681364536.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 19.883892701075144,
+      "float_market_cap": 3496017604.05,
+      "pe_dynamic": -512.52740938
     },
     {
       "date": "2026-06-18",
@@ -687,9 +687,9 @@
       "volume": 10593544.0,
       "amount": 935543902.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 23.977772187099408,
+      "float_market_cap": 3753149190.75,
+      "pe_dynamic": -550.22372585
     },
     {
       "date": "2026-06-22",
@@ -700,9 +700,9 @@
       "volume": 10834326.0,
       "amount": 1115680038.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 24.52276600057242,
+      "float_market_cap": 4878873044.55,
+      "pe_dynamic": -715.25845846
     },
     {
       "date": "2026-06-23",
@@ -713,9 +713,9 @@
       "volume": 13018992.0,
       "amount": 1520971969.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 29.467610110617343,
+      "float_market_cap": 4992417405.0,
+      "pe_dynamic": -731.90442638
     },
     {
       "date": "2026-06-24",
@@ -726,9 +726,9 @@
       "volume": 10581159.0,
       "amount": 1123799068.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 23.949739575110705,
+      "float_market_cap": 4892127250.05,
+      "pe_dynamic": -717.20156755
     },
     {
       "date": "2026-06-25",
@@ -739,9 +739,9 @@
       "volume": 11179302.0,
       "amount": 1219192458.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 25.303595903956673,
+      "float_market_cap": 5390043570.0,
+      "pe_dynamic": -790.19769928
     },
     {
       "date": "2026-06-26",
@@ -752,9 +752,9 @@
       "volume": 8364930.0,
       "amount": 969095508.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 18.933454743854696,
+      "float_market_cap": 4725124260.75,
+      "pe_dynamic": -692.71839294
     },
     {
       "date": "2026-06-29",
@@ -765,9 +765,9 @@
       "volume": 7764845.0,
       "amount": 770569938.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 17.57520282901906,
+      "float_market_cap": 4108803705.0,
+      "pe_dynamic": -602.36381994
     },
     {
       "date": "2026-06-30",
@@ -778,9 +778,9 @@
       "volume": 8336136.0,
       "amount": 840556794.0,
       "change_pct": null,
-      "turnover": null,
-      "float_market_cap": null,
-      "pe_dynamic": null
+      "turnover": 18.868281467342573,
+      "float_market_cap": 4613347127.7,
+      "pe_dynamic": -676.33150622
     }
   ]
 }

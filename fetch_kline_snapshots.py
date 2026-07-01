@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from sector_data import AccessPolicy, CacheStore, SourceStatus
-from sector_dashboard import _load_stock_kline_data, _write_kline_files
+from sector_dashboard import _get_or_fetch_market_snapshot_history, _load_stock_kline_data, _merge_kline_snapshot_metrics, _write_kline_files
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=15.0, help="单只股票 K 线请求超时秒数。")
     parser.add_argument("--lookback-days", type=int, default=180, help="向前请求的自然日窗口。")
     parser.add_argument("--source", choices=["eastmoney", "sina"], default="sina", help="K 线快照数据源。")
+    parser.add_argument("--skip-metrics", action="store_true", help="跳过东方财富历史快照指标合并。")
+    parser.add_argument("--snapshot-days", type=int, default=61, help="用于合并指标的历史快照交易日数量。")
     parser.add_argument("--cache-only", action="store_true", help="只把已有缓存写到网站目录。")
     return parser.parse_args()
 
@@ -51,6 +53,18 @@ def main() -> int:
         request_budget=args.request_budget,
         source=args.source,
     )
+    if not args.skip_metrics:
+        metric_snapshot = _get_or_fetch_market_snapshot_history(
+            cache=cache,
+            latest_date=end.strftime("%Y-%m-%d"),
+            status=status,
+            policy=policy,
+            timeout_seconds=args.timeout,
+            cache_only=args.cache_only,
+            request_budget=args.request_budget,
+            snapshot_days=args.snapshot_days,
+        )
+        kline_data = _merge_kline_snapshot_metrics(kline_data, metric_snapshot)
     written = _write_kline_files(output_dir=Path(args.output_dir), kline_data=kline_data)
     print(f"written={written}", flush=True)
     print(status.as_dict(), flush=True)

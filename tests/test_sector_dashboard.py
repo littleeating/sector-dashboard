@@ -11,8 +11,10 @@ from sector_dashboard import (
     StockInfo,
     _build_context,
     _fetch_eastmoney_stock_history,
+    _fetch_eastmoney_market_snapshot_for_date,
     _fetch_eastmoney_clist_rows,
     _limit_boards,
+    _load_stock_kline_data,
     _load_sector_stock_histories,
     _load_board_infos,
     _load_board_infos_cached,
@@ -20,6 +22,7 @@ from sector_dashboard import (
     _select_sina_board_pool,
     _aggregate_sector_histories_from_stocks,
     _collect_stock_kline_targets,
+    _merge_kline_snapshot_metrics,
     _write_kline_files,
     _sina_symbol,
     generate_live_dashboard,
@@ -326,7 +329,9 @@ class SectorDashboardRenderTest(unittest.TestCase):
                         "low": 9.8,
                         "volume": 100,
                         "amount": 2000,
-                        "turnover": 1.2,
+                        "turnover": float("nan"),
+                        "pe_dynamic": 18.5,
+                        "float_market_cap": 3200000000,
                     }
                 ]
             )
@@ -341,6 +346,111 @@ class SectorDashboardRenderTest(unittest.TestCase):
             self.assertIn('"code": "600001"', payload)
             self.assertIn('"name": "FastStock"', payload)
             self.assertIn('"open": 10.0', payload)
+            self.assertIn('"turnover": null', payload)
+            self.assertIn('"pe_dynamic": 18.5', payload)
+            self.assertIn('"float_market_cap": 3200000000.0', payload)
+
+    def test_merge_kline_snapshot_metrics_adds_same_day_valuation_fields(self):
+        kline = pd.DataFrame(
+            [
+                {"date": "2026-06-25", "open": 10.0, "close": 11.0, "high": 11.5, "low": 9.8},
+                {"date": "2026-06-26", "open": 11.0, "close": 12.0, "high": 12.5, "low": 10.8},
+            ]
+        )
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "code": "600001",
+                    "date": "2026-06-25",
+                    "turnover": 1.2,
+                    "pe_dynamic": 18.5,
+                    "float_market_cap": 3200000000,
+                },
+                {
+                    "code": "600001",
+                    "date": "2026-06-26",
+                    "turnover": 1.6,
+                    "pe_dynamic": 19.0,
+                    "float_market_cap": 3500000000,
+                },
+            ]
+        )
+
+        merged = _merge_kline_snapshot_metrics({"600001": ("FastStock", kline)}, snapshot)
+
+        merged_frame = merged["600001"][1]
+        self.assertEqual(merged_frame["turnover"].tolist(), [1.2, 1.6])
+        self.assertEqual(merged_frame["pe_dynamic"].tolist(), [18.5, 19.0])
+        self.assertEqual(merged_frame["float_market_cap"].tolist(), [3200000000, 3500000000])
+
+    def test_load_stock_kline_data_uses_code_cache_key_and_reads_legacy_name_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), version="test")
+            legacy = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-06-26",
+                        "open": 10.0,
+                        "close": 12.0,
+                        "high": 12.5,
+                        "low": 9.8,
+                    }
+                ]
+            )
+            cache.write_history("stock_kline/sina", "600001_FastStock", legacy, data_date="2026-07-01")
+            status = SourceStatus(source="test")
+            policy = AccessPolicy(max_workers=1, min_delay=0, max_delay=0, retry_delays=())
+
+            data = _load_stock_kline_data(
+                cache=cache,
+                targets={"600001": "FastStock"},
+                latest_date="2026-07-01",
+                start_date="20260601",
+                end_date="20260630",
+                status=status,
+                policy=policy,
+                timeout_seconds=20,
+                cache_only=True,
+                source="sina",
+            )
+
+            self.assertIn("600001", data)
+            self.assertIsNotNone(cache.read_history("stock_kline/sina", "600001"))
+            self.assertEqual(status.cache_hits, 1)
+
+    def test_fetch_eastmoney_market_snapshot_for_date_maps_valuation_fields(self):
+        payload = {
+            "result": {
+                "count": 1,
+                "data": [
+                    {
+                        "SECURITY_CODE": "600001",
+                        "SECURITY_NAME_ABBR": "FastStock",
+                        "TRADE_DATE": "2026-06-26 00:00:00",
+                        "CLOSE_PRICE": 12.0,
+                        "CHANGE_RATE": 5.5,
+                        "NOTLIMITED_MARKETCAP_A": 3200000000,
+                        "FREE_SHARES_A": 266666666,
+                        "PE_TTM": 18.5,
+                    }
+                ],
+            },
+            "success": True,
+        }
+
+        with patch("sector_dashboard._fetch_eastmoney_datacenter_payload", return_value=payload):
+            frame, total = _fetch_eastmoney_market_snapshot_for_date(
+                "2026-06-26",
+                page=1,
+                page_size=5000,
+                timeout_seconds=20,
+            )
+
+        self.assertEqual(total, 1)
+        row = frame.iloc[0].to_dict()
+        self.assertEqual(row["float_market_cap"], 3200000000)
+        self.assertEqual(row["free_shares"], 266666666)
+        self.assertEqual(row["pe_dynamic"], 18.5)
 
     def test_stock_snapshot_histories_preserve_stock_code_for_kline_linking(self):
         from sector_dashboard import _snapshot_histories_for_constituents
@@ -762,13 +872,13 @@ class SectorDashboardRenderTest(unittest.TestCase):
             snapshots = {
                 "2026-06-25": pd.DataFrame(
                     [
-                        {"code": "600001", "name": "FastStock", "date": "2026-06-25", "close": 10, "return_pct": 0},
+                        {"code": "600001", "name": "FastStock", "date": "2026-06-25", "close": 10, "return_pct": 0, "turnover": 1.2, "pe_dynamic": 20, "float_market_cap": 1000},
                         {"code": "600002", "name": "SlowStock", "date": "2026-06-25", "close": 10, "return_pct": 0},
                     ]
                 ),
                 "2026-06-26": pd.DataFrame(
                     [
-                        {"code": "600001", "name": "FastStock", "date": "2026-06-26", "close": 15, "return_pct": 50},
+                        {"code": "600001", "name": "FastStock", "date": "2026-06-26", "close": 15, "return_pct": 50, "turnover": 1.5, "pe_dynamic": 22, "float_market_cap": 1200},
                         {"code": "600002", "name": "SlowStock", "date": "2026-06-26", "close": 11, "return_pct": 10},
                     ]
                 ),
@@ -806,6 +916,9 @@ class SectorDashboardRenderTest(unittest.TestCase):
         self.assertEqual(stock_history_fetcher.call_count, 0)
         self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["date"].tolist(), ["2026-06-25", "2026-06-26"])
         self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["close"].tolist(), [10, 15])
+        self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["turnover"].tolist(), [1.2, 1.5])
+        self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["pe_dynamic"].tolist(), [20, 22])
+        self.assertEqual(histories["industry"]["SectorA"]["FastStock"]["float_market_cap"].tolist(), [1000, 1200])
 
     def test_fetch_eastmoney_clist_rows_falls_back_to_delay_endpoint_once(self):
         class FakeResponse:

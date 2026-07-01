@@ -1151,9 +1151,22 @@ def generate_live_dashboard(
         request_budget=request_budget,
         source="sina",
     )
+    kline_metric_snapshot = _get_or_fetch_market_snapshot_history(
+        cache=cache,
+        latest_date=today,
+        status=status,
+        policy=policy,
+        timeout_seconds=stock_fetch_timeout,
+        cache_only=cache_only,
+        request_budget=request_budget,
+        snapshot_days=max(stock_snapshot_days, (max(periods) + 1) if periods else stock_snapshot_days),
+    )
+    kline_data = _merge_kline_snapshot_metrics(kline_data, kline_metric_snapshot)
     context["quality"]["stock_kline_targets"] = len(kline_targets)
     context["quality"]["stock_kline_files"] = _write_kline_files(output_dir=output_path.parent, kline_data=kline_data)
     context["quality"]["stock_kline_source"] = "sina"
+    context["quality"]["stock_kline_metrics_source"] = "eastmoney historical snapshot"
+    context["quality"]["stock_kline_pe_source"] = "eastmoney PE_TTM"
     output_path.write_text(render_dashboard(context), encoding="utf-8")
     return output_path
 
@@ -1308,12 +1321,15 @@ def _load_stock_kline_data(
         if status.limited or _request_budget_reached(status, request_budget):
             break
         stock = StockInfo(name=name, code=code)
-        cache_name = _stock_cache_name(stock)
+        cache_name = _normalize_stock_code(code)
         cached = cache.read_history(cache_category, cache_name)
+        if cached is None:
+            cached = cache.read_history(cache_category, _stock_cache_name(stock))
         if cached is not None:
             frame, cached_date = cached
             if cached_date == latest_date:
                 status.cache_hits += 1
+                cache.write_history(cache_category, cache_name, frame, data_date=latest_date)
                 kline_data[code] = (name, frame)
                 continue
         if cache_only:
@@ -1335,6 +1351,60 @@ def _load_stock_kline_data(
         except Exception as exc:
             status.messages.append(f"{name} K线: {exc}")
     return kline_data
+
+
+def _merge_kline_snapshot_metrics(
+    kline_data: dict[str, tuple[str, pd.DataFrame]],
+    snapshot: pd.DataFrame,
+) -> dict[str, tuple[str, pd.DataFrame]]:
+    if snapshot.empty:
+        return kline_data
+    required = {"code", "date"}
+    if not required.issubset(snapshot.columns):
+        return kline_data
+
+    metric_columns = [
+        column
+        for column in ("turnover", "pe_dynamic", "float_market_cap", "free_shares", "close")
+        if column in snapshot.columns
+    ]
+    if not metric_columns:
+        return kline_data
+
+    metrics = snapshot.loc[:, ["code", "date", *metric_columns]].copy()
+    metrics["code"] = metrics["code"].map(_normalize_stock_code)
+    metrics["date"] = metrics["date"].map(lambda value: str(value)[:10])
+    for column in metric_columns:
+        metrics[column] = pd.to_numeric(metrics[column], errors="coerce")
+    metrics = metrics.drop_duplicates(subset=["code", "date"], keep="last")
+
+    merged_data: dict[str, tuple[str, pd.DataFrame]] = {}
+    for code, (name, frame) in kline_data.items():
+        normalized_code = _normalize_stock_code(code)
+        if frame.empty or "date" not in frame.columns:
+            merged_data[code] = (name, frame)
+            continue
+        left = frame.copy()
+        left["date"] = left["date"].map(lambda value: str(value)[:10])
+        right = metrics[metrics["code"] == normalized_code].drop(columns=["code"], errors="ignore")
+        if right.empty:
+            merged_data[code] = (name, left)
+            continue
+        merged = left.merge(right, on="date", how="left", suffixes=("", "_snapshot"))
+        if "float_market_cap" not in merged.columns and {"close", "free_shares"}.issubset(merged.columns):
+            close = pd.to_numeric(merged["close"], errors="coerce")
+            free_shares = pd.to_numeric(merged["free_shares"], errors="coerce")
+            merged["float_market_cap"] = close.mul(free_shares)
+        if (
+            ("turnover" not in merged.columns or pd.to_numeric(merged["turnover"], errors="coerce").isna().all())
+            and "volume" in merged.columns
+            and "free_shares" in merged.columns
+        ):
+            volume = pd.to_numeric(merged["volume"], errors="coerce")
+            free_shares = pd.to_numeric(merged["free_shares"], errors="coerce")
+            merged["turnover"] = volume.div(free_shares).mul(100)
+        merged_data[code] = (name, merged)
+    return merged_data
 
 
 def _write_kline_files(*, output_dir: Path, kline_data: dict[str, tuple[str, pd.DataFrame]]) -> int:
@@ -2004,9 +2074,11 @@ def _get_or_fetch_market_snapshot(
     cached = cache.read_history(cache_category, cache_name)
     if cached is not None:
         frame, cached_date = cached
-        if cached_date == latest_date:
+        if cached_date == latest_date and (_market_snapshot_has_metric_columns(frame) or cache_only):
             status.cache_hits += 1
             return frame
+        if cached_date == latest_date:
+            status.messages.append("refreshing market snapshot history for valuation metrics")
     if cache_only:
         raise ValueError("missing cached eastmoney market snapshot")
 
@@ -2117,9 +2189,11 @@ def _get_or_fetch_market_snapshot_history(
     cached = cache.read_history(cache_category, cache_name)
     if cached is not None:
         frame, cached_date = cached
-        if cached_date == latest_date:
+        if cached_date == latest_date and (_market_snapshot_has_metric_columns(frame) or cache_only):
             status.cache_hits += 1
             return frame
+        if cached_date == latest_date:
+            status.messages.append("refreshing market snapshot history for valuation metrics")
     if cache_only:
         raise ValueError("missing cached eastmoney market snapshot history")
 
@@ -2162,8 +2236,10 @@ def _get_or_fetch_market_snapshot_for_date(
     cached = cache.read_history(cache_category, trade_date)
     if cached is not None:
         frame, _ = cached
-        status.cache_hits += 1
-        return frame
+        if _market_snapshot_has_metric_columns(frame) or cache_only:
+            status.cache_hits += 1
+            return frame
+        status.messages.append(f"refreshing {trade_date} snapshot for valuation metrics")
     if cache_only:
         return pd.DataFrame()
 
@@ -2199,6 +2275,10 @@ def _get_or_fetch_market_snapshot_for_date(
     return frame
 
 
+def _market_snapshot_has_metric_columns(frame: pd.DataFrame) -> bool:
+    return {"float_market_cap", "free_shares", "pe_dynamic"}.issubset(frame.columns)
+
+
 def _market_snapshot_history_by_code(snapshot: pd.DataFrame) -> dict[str, pd.DataFrame]:
     required = {"code", "name", "date", "close"}
     missing = required - set(snapshot.columns)
@@ -2219,6 +2299,10 @@ def _market_snapshot_history_by_code(snapshot: pd.DataFrame) -> dict[str, pd.Dat
                 "name": str(row.get("name") or ""),
                 "date": str(row.get("date", ""))[:10],
                 "close": close,
+                "turnover": _to_float_or_none(row.get("turnover")),
+                "pe_dynamic": _to_float_or_none(row.get("pe_dynamic")),
+                "float_market_cap": _to_float_or_none(row.get("float_market_cap")),
+                "free_shares": _to_float_or_none(row.get("free_shares")),
             }
         )
     return {
@@ -2241,7 +2325,12 @@ def _snapshot_histories_for_constituents(
         history = snapshot_by_code.get(_normalize_stock_code(stock.code))
         if history is None or history.empty:
             continue
-        selected = history.loc[:, ["date", "close"]].copy()
+        selected_columns = [
+            column
+            for column in ["date", "close", "turnover", "pe_dynamic", "float_market_cap", "free_shares"]
+            if column in history.columns
+        ]
+        selected = history.loc[:, selected_columns].copy()
         selected["code"] = _normalize_stock_code(stock.code)
         histories[stock.name] = selected
     return histories
@@ -2555,7 +2644,10 @@ def _fetch_eastmoney_market_snapshot_for_date(
             "pageSize": str(page_size),
             "pageNumber": str(page),
             "reportName": "RPT_VALUEANALYSIS_DET",
-            "columns": "SECURITY_CODE,SECURITY_NAME_ABBR,TRADE_DATE,CLOSE_PRICE,CHANGE_RATE",
+            "columns": (
+                "SECURITY_CODE,SECURITY_NAME_ABBR,TRADE_DATE,CLOSE_PRICE,CHANGE_RATE,"
+                "NOTLIMITED_MARKETCAP_A,FREE_SHARES_A,PE_TTM"
+            ),
             "source": "WEB",
             "client": "WEB",
             "filter": f"(TRADE_DATE='{trade_date}')",
@@ -2575,6 +2667,9 @@ def _fetch_eastmoney_market_snapshot_for_date(
                 "date": str(row.get("TRADE_DATE", ""))[:10],
                 "close": _to_float_or_none(row.get("CLOSE_PRICE")),
                 "return_pct": _to_float_or_none(row.get("CHANGE_RATE")),
+                "float_market_cap": _to_float_or_none(row.get("NOTLIMITED_MARKETCAP_A")),
+                "free_shares": _to_float_or_none(row.get("FREE_SHARES_A")),
+                "pe_dynamic": _to_float_or_none(row.get("PE_TTM")),
             }
             for row in rows
             if isinstance(row, dict) and row.get("SECURITY_CODE") and row.get("TRADE_DATE")
@@ -2964,10 +3059,13 @@ def _normalize_stock_code(code: str) -> str:
 
 
 def _to_float_or_none(value: Any) -> float | None:
+    import math
+
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None
 
 
 def _stock_secid(code: str) -> str:
